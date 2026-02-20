@@ -80,46 +80,52 @@ DEFAULT_MODELS: list[ModelSpec] = [
     #     short_name="GPT-4o",
     #     provider="OpenAI",
     # ),
+    ModelSpec(
+        id="anthropic/claude-opus-4.6",
+        short_name="Claude-Opus-4.6",
+        provider="Anthropic",
+    ),
+    ModelSpec(
+        id="anthropic/claude-sonnet-4",
+        short_name="Claude-Sonnet-4",
+        provider="Anthropic",
+    ),
+    ModelSpec(
+        id="google/gemini-2.5-pro-preview",
+        short_name="Gemini-2.5-Pro",
+        provider="Google",
+    ),
+    ModelSpec(
+        id="deepseek/deepseek-r1-0528:free",
+        short_name="DeepSeek-R1-0528",
+        provider="DeepSeek",
+    ),
+
     # ModelSpec(
-    #     id="anthropic/claude-sonnet-4",
-    #     short_name="Claude-Sonnet-4",
-    #     provider="Anthropic",
+    #     id="qwen/qwen3.5-plus-02-15",
+    #     short_name="Qwen3.5-Plus",
+    #     provider="Qwen (Alibaba)",
+    # ),  
+    # ModelSpec(
+    #     id="meta-llama/llama-3.1-8b-instruct",
+    #     short_name="Llama-3.1-8B",
+    #     provider="Meta",
     # ),
     # ModelSpec(
-    #     id="google/gemini-2.5-pro-preview",
-    #     short_name="Gemini-2.5-Pro",
-    #     provider="Google",
+    #     id="moonshotai/kimi-k2.5",
+    #     short_name="Kimi-K2.5",
+    #     provider="Moonshot AI",
     # ),
     # ModelSpec(
-    #     id="deepseek/deepseek-r1-0528:free",
-    #     short_name="DeepSeek-R1-0528",
-    #     provider="DeepSeek",
+    #     id="qwen/qwen3-235b-a22b-2507",
+    #     short_name="Qwen3-235B-A22B",      
+    #     provider="Qwen (Alibaba)",
     # ),
-    ModelSpec(
-        id="qwen/qwen3.5-plus-02-15",
-        short_name="Qwen3.5-Plus",
-        provider="Qwen (Alibaba)",
-    ),  
-    ModelSpec(
-        id="meta-llama/llama-3.1-8b-instruct",
-        short_name="Llama-3.1-8B",
-        provider="Meta",
-    ),
-    ModelSpec(
-        id="moonshotai/kimi-k2.5",
-        short_name="Kimi-K2.5",
-        provider="Moonshot AI",
-    ),
-    ModelSpec(
-        id="qwen/qwen3-235b-a22b-2507",
-        short_name="Qwen3-235B-A22B",      
-        provider="Qwen (Alibaba)",
-    ),
-    ModelSpec(
-        id="qwen/qwen-2.5-coder-32b-instruct",
-        short_name="Qwen-2.5-Coder",
-        provider="Qwen (Alibaba)",
-    ),
+    # ModelSpec(
+    #     id="qwen/qwen-2.5-coder-32b-instruct",
+    #     short_name="Qwen-2.5-Coder",
+    #     provider="Qwen (Alibaba)",
+    # ),
 ]
 
 
