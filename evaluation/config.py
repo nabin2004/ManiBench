@@ -10,6 +10,13 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Load .env file if present (before reading os.getenv)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass  # python-dotenv not installed; user must export vars manually
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -47,7 +54,7 @@ INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "https://api.inference.net/
 SUPPORTED_PROVIDERS = ["openrouter", "inference"]
 
 # Per-request settings
-REQUEST_TIMEOUT = 120          # seconds
+REQUEST_TIMEOUT = (10, 120)    # (connect_timeout, read_timeout) in seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 5                # seconds between retries
 MAX_TOKENS = 8192              # max generation length
@@ -181,34 +188,9 @@ CE_VALID_IMPORTS = [
 # ---------------------------------------------------------------------------
 INFERENCE_MODELS: list[ModelSpec] = [
     ModelSpec(
-        id="meta-llama/llama-3.3-70b-instruct-fp8",
-        short_name="Llama-3.3-70B",
-        provider="Meta (via Inference.net)",
-    ),
-    ModelSpec(
-        id="meta-llama/llama-3.1-8b-instruct",
-        short_name="Llama-3.1-8B",
-        provider="Meta (via Inference.net)",
-    ),
-    ModelSpec(
-        id="meta-llama/llama-3.1-70b-instruct",
-        short_name="Llama-3.1-70B",
-        provider="Meta (via Inference.net)",
-    ),
-    ModelSpec(
-        id="mistralai/mistral-nemo-instruct-2407",
-        short_name="Mistral-Nemo",
-        provider="Mistral (via Inference.net)",
-    ),
-    ModelSpec(
-        id="nvidia/llama-3.1-nemotron-70b-instruct-hf",
-        short_name="Nemotron-70B",
-        provider="NVIDIA (via Inference.net)",
-    ),
-    ModelSpec(
-        id="qwen/qwen-2.5-coder-32b-instruct",
-        short_name="Qwen-2.5-Coder-Inf",
-        provider="Alibaba (via Inference.net)",
+        id="google/gemma-3-27b-instruct/bf-16",
+        short_name="Gemma-3-27B",
+        provider="Google (via Inference.net)",
     ),
 ]
 

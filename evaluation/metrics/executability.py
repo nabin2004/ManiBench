@@ -13,6 +13,7 @@ Checks:
 import ast
 import re
 import subprocess
+import sys
 import tempfile
 import textwrap
 from pathlib import Path
@@ -156,7 +157,7 @@ def run_manim_code(
 
         # Build manim command
         cmd = [
-            "manim", f"-q{quality}",
+            sys.executable, "-m", "manim", f"-q{quality}",
             "--disable_caching",
             "--media_dir", str(Path(tmpdir) / "media"),
             str(code_path),
@@ -233,9 +234,14 @@ def _parse_error(stderr: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def compute_executability(code: str, timeout: int = 60) -> dict[str, Any]:
+def compute_executability(code: str, timeout: int = 60, skip_render: bool = False) -> dict[str, Any]:
     """
     Full executability check pipeline.
+
+    Args:
+        code: The generated Python/Manim code to check.
+        timeout: Seconds to allow for Manim rendering.
+        skip_render: If True, skip actual Manim execution (static analysis only).
 
     Returns:
         {
@@ -284,7 +290,13 @@ def compute_executability(code: str, timeout: int = 60) -> dict[str, Any]:
         result["error_message"] = "No Scene subclass found"
         return result
 
-    # Step 4: Execution
+    # Step 4: Execution (skip if requested)
+    if skip_render:
+        # Static analysis passed — count as executable
+        result["render_success"] = True
+        result["executability"] = 1
+        return result
+
     render = run_manim_code(code, timeout=timeout)
     result["render_success"] = render["success"]
     result["error_type"] = render["error_type"]

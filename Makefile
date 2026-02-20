@@ -274,7 +274,7 @@ inference-quick-test:
 	@echo "════════════════════════════════════════════════════════"
 	$(PY) -m evaluation.run \
 		--provider inference \
-		--models Llama-3.1-8B \
+		--models Gemma-3-27B \
 		--problems MB-005 \
 		--trials 1 \
 		--skip-render

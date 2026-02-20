@@ -238,11 +238,10 @@ def run_evaluation(config: EvalConfig):
                     messages = build_messages(problem, config.prompt_strategy)
                     gen_start = time.time()
                     result = client.generate(
-                        model_id=model.id,
+                        model=model,
                         messages=messages,
                         max_tokens=model.max_tokens,
                         temperature=model.temperature,
-                        top_p=model.top_p,
                     )
                     gen_time = time.time() - gen_start
 
@@ -268,10 +267,11 @@ def run_evaluation(config: EvalConfig):
                             model=model.short_name,
                             problem_id=pid,
                             trial=trial,
+                            prompt_strategy=config.prompt_strategy,
+                            prompt_tokens=result.get("prompt_tokens", 0),
+                            completion_tokens=result.get("completion_tokens", 0),
+                            latency_ms=result.get("latency_ms", gen_time * 1000),
                             code=code,
-                            tokens=result.get("prompt_tokens", 0) +
-                                   result.get("completion_tokens", 0),
-                            latency=gen_time,
                         )
 
                         # ── Compute metrics ──

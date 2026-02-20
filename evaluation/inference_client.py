@@ -7,25 +7,25 @@ Supports retries, rate limiting, token tracking, and error handling.
 Inference.net endpoint:  https://api.inference.net/v1
 Auth:  Bearer <INFERENCE_API_KEY>
 
-The API is OpenAI-compatible, so the request/response schema is the same
-as OpenRouter (chat completions).
+Uses httpx for reliable timeout enforcement (requests/urllib3 can hang
+on SSL reads when the server accepts but doesn't respond).
 """
 
 import time
-import json
 import re
 from typing import Any
-
-import requests
+import httpx
 
 from evaluation.config import (
     INFERENCE_API_KEY,
     INFERENCE_BASE_URL,
-    REQUEST_TIMEOUT,
     MAX_RETRIES,
     RETRY_DELAY,
     ModelSpec,
 )
+
+# Hard timeout: (connect, read, write, pool) — all in seconds
+HTTPX_TIMEOUT = httpx.Timeout(10.0, read=120.0, write=30.0, pool=10.0)
 
 
 class InferenceNetError(Exception):
@@ -51,11 +51,6 @@ class InferenceNetClient:
                 "Get a key at https://inference.net"
             )
         self.base_url = INFERENCE_BASE_URL
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        })
 
     def generate(
         self,
@@ -85,22 +80,28 @@ class InferenceNetClient:
             "temperature": temperature if temperature is not None else model.temperature,
             "max_tokens": max_tokens or model.max_tokens,
             "top_p": model.top_p,
-            "stream": False,  # We collect the full response (no streaming)
+            "stream": False,
         }
 
-        last_error = None
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last_error: Exception | None = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 t0 = time.monotonic()
-                resp = self.session.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    timeout=REQUEST_TIMEOUT,
-                )
+                # Use a fresh httpx client per request for reliable timeouts
+                with httpx.Client(timeout=HTTPX_TIMEOUT) as client:
+                    resp = client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
                 latency_ms = (time.monotonic() - t0) * 1000
 
                 if resp.status_code == 429:
-                    # Rate limited — back-off and retry
                     wait = RETRY_DELAY * attempt
                     time.sleep(wait)
                     continue
@@ -114,8 +115,18 @@ class InferenceNetClient:
                 data = resp.json()
 
                 # Parse response (OpenAI-compatible schema)
-                choice = data["choices"][0]
-                content = choice["message"]["content"]
+                choices = data.get("choices", [])
+                if not choices:
+                    raise InferenceNetError(
+                        f"No choices in API response: {str(data)[:300]}"
+                    )
+
+                choice = choices[0]
+                message = choice.get("message", {})
+                if isinstance(message, str):
+                    content = message
+                else:
+                    content = message.get("content", "")
                 usage = data.get("usage", {})
 
                 return {
@@ -129,7 +140,12 @@ class InferenceNetClient:
                     "finish_reason": choice.get("finish_reason", "unknown"),
                 }
 
-            except (requests.ConnectionError, requests.Timeout) as e:
+            except httpx.TimeoutException as e:
+                last_error = e
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY * attempt)
+                continue
+            except httpx.ConnectError as e:
                 last_error = e
                 if attempt < MAX_RETRIES:
                     time.sleep(RETRY_DELAY * attempt)
@@ -149,13 +165,13 @@ class InferenceNetClient:
           - ``` ... ``` blocks
           - Raw code (if no code fence found)
         """
-        # Try ```python block first
+        # Try python block first
         pattern = r"```python\s*\n(.*?)```"
         matches = re.findall(pattern, content, re.DOTALL)
         if matches:
             return max(matches, key=len).strip()
 
-        # Try generic ``` block
+        # Try generic block
         pattern = r"```\s*\n(.*?)```"
         matches = re.findall(pattern, content, re.DOTALL)
         if matches:
@@ -177,9 +193,10 @@ class InferenceNetClient:
 
     def list_models(self) -> list[dict]:
         """Fetch available models from Inference.net."""
-        resp = self.session.get(
-            f"{self.base_url}/models",
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json().get("data", [])
+        with httpx.Client(timeout=HTTPX_TIMEOUT) as client:
+            resp = client.get(
+                f"{self.base_url}/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+            )
+            resp.raise_for_status()
+            return resp.json().get("data", [])

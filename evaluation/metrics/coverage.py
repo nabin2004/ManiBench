@@ -141,9 +141,15 @@ def compute_coverage(
         req_details = []
         met_count = 0
         for req in coverage_requirements:
-            element = req.get("element", "")
-            description = req.get("description", "")
-            metric = req.get("metric", "")
+            # Handle both string and dict formats
+            if isinstance(req, str):
+                element = req
+                description = req
+                metric = ""
+            else:
+                element = req.get("element", "")
+                description = req.get("description", "")
+                metric = req.get("metric", "")
             met, evidence = _check_requirement(code, element, description, metric)
             if met:
                 met_count += 1
