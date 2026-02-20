@@ -57,7 +57,7 @@ class WindmillProblem(Scene):
         self.play(Write(title))
 
         point_label = Text(f"{n} Points", font_size=24)
-        point_label.next_to(point_objects, UP)
+        point_label.next_to(point_objects, DOWN)
         self.play(Write(point_label))
 
         line_label = Text("Rotating Line", font_size=24)

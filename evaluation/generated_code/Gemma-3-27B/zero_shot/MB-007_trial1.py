@@ -25,45 +25,39 @@ class BayesTheoremAnimation(Scene):
         self.play(Create(line_v), Create(line_h))
 
         # Labels
-        sick_plus_label = Tex("P(Sick $\\cap$ +)", color=WHITE).move_to(rect.get_top_left() + DOWN * 0.5 + LEFT * 0.5)
-        not_sick_plus_label = Tex("P(Not Sick $\\cap$ +)", color=WHITE).move_to(rect.get_top_right() + DOWN * 0.5 + RIGHT * 0.5)
-        sick_minus_label = Tex("P(Sick $\\cap$ -)", color=WHITE).move_to(rect.get_bottom_left() + UP * 0.5 + LEFT * 0.5)
-        not_sick_minus_label = Tex("P(Not Sick $\\cap$ -)", color=WHITE).move_to(rect.get_bottom_right() + UP * 0.5 + RIGHT * 0.5)
+        sick_plus_label = Tex("P(Sick $\\cap$ +)", color=WHITE).next_to(line_v, UP + LEFT)
+        not_sick_plus_label = Tex("P(Not Sick $\\cap$ +)", color=WHITE).next_to(line_v, UP + RIGHT)
+        sick_minus_label = Tex("P(Sick $\\cap$ -)", color=WHITE).next_to(line_v, DOWN + LEFT)
+        not_sick_minus_label = Tex("P(Not Sick $\\cap$ -)", color=WHITE).next_to(line_v, DOWN + RIGHT)
 
         self.play(Write(sick_plus_label), Write(not_sick_plus_label), Write(sick_minus_label), Write(not_sick_minus_label))
 
         # Initial counts
-        sick_plus_text = Tex(f"{true_positives:.0f}", color=GREEN).move_to(rect.get_top_left() + DOWN * 0.5 + LEFT * 0.5 + DOWN * 0.7)
-        not_sick_plus_text = Tex(f"{false_positives:.0f}", color=RED).move_to(rect.get_top_right() + DOWN * 0.5 + RIGHT * 0.5 + DOWN * 0.7)
-        sick_minus_text = Tex(f"{false_negatives:.0f}", color=RED).move_to(rect.get_bottom_left() + UP * 0.5 + LEFT * 0.5 + UP * 0.7)
-        not_sick_minus_text = Tex(f"{true_negatives:.0f}", color=GREEN).move_to(rect.get_bottom_right() + UP * 0.5 + RIGHT * 0.5 + UP * 0.7)
+        sick_plus_text = Tex(f"{true_positives:.0f}", color=GREEN).next_to(sick_plus_label, DOWN)
+        not_sick_plus_text = Tex(f"{false_positives:.0f}", color=RED).next_to(not_sick_plus_label, DOWN)
+        sick_minus_text = Tex(f"{false_negatives:.0f}", color=RED).next_to(sick_minus_label, DOWN)
+        not_sick_minus_text = Tex(f"{true_negatives:.0f}", color=GREEN).next_to(not_sick_minus_label, DOWN)
 
         self.play(Write(sick_plus_text), Write(not_sick_plus_text), Write(sick_minus_text), Write(not_sick_minus_text))
 
-        # Highlight sick population who tested +
+        # Highlight sick population who tested positive
         highlight_rect = SurroundingRectangle(sick_plus_text, color=YELLOW, buff=0.2)
         self.play(Create(highlight_rect))
-        self.wait(1)
-        self.play(Uncreate(highlight_rect))
 
-        # Bayes' theorem calculation
-        bayes_theorem_text = Tex("P(Sick | +) = P(Sick $\\cap$ +) / (P(Sick $\\cap$ +) + P(Not Sick $\\cap$ +))", color=WHITE)
-        bayes_theorem_text.move_to(rect.get_bottom() + UP * 1.5)
-        self.play(Write(bayes_theorem_text))
+        # Calculation
+        calculation_text = Tex("P(Sick | +) = P(Sick $\\cap$ +) / (P(Sick $\\cap$ +) + P(Not Sick $\\cap$ +))", color=WHITE)
+        calculation_text.to_edge(UP)
+        self.play(Write(calculation_text))
 
-        # Calculate and display final probability
+        # Final probability
         denominator = true_positives + false_positives
-        if denominator == 0:
-            probability = 0
-        else:
-            probability = true_positives / denominator
-
-        probability_text = Tex(f"P(Sick | +) = {probability:.2f}", color=GREEN).next_to(bayes_theorem_text, DOWN)
-        self.play(Write(probability_text))
+        probability = true_positives / denominator if denominator > 0 else 0
+        final_probability_text = Tex(f"P(Sick | +) = {probability:.2f}", color=GREEN).next_to(calculation_text, DOWN)
+        self.play(Write(final_probability_text))
 
         # Explanation
-        paradox_text = Tex("Even with a 95% accurate test, the probability of being sick given a positive result is low due to the low disease prevalence.", color=YELLOW)
-        paradox_text.move_to(rect.get_bottom() + UP * -1.5)
+        paradox_text = Tex("Even with a 95% accurate test, a low disease prevalence leads to a high false positive rate.", color=RED)
+        paradox_text.next_to(final_probability_text, DOWN)
         self.play(Write(paradox_text))
 
-        self.wait(3)
+        self.wait(5)

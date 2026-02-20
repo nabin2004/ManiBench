@@ -44,13 +44,14 @@ class CentralLimitTheorem(Scene):
         normal_label = Tex("Normal Distribution", color=GREEN).next_to(normal_curve, UP)
 
         self.play(
-            sample_means_hist.animate.shift(LEFT * 2),
-            normal_curve.animate.to_edge(RIGHT),
-            normal_label.animate.next_to(normal_curve, UP)
+            sample_means_hist.animate.set_data(sample_means),
+            normal_curve.animate.shift(LEFT * 0.5 + DOWN * 0.5),
+            normal_label.animate.shift(LEFT * 0.5 + DOWN * 1.2),
+            run_time=1
         )
 
         # Text
-        text = Tex("Distribution of sample means → Normal distribution").to_edge(DOWN)
+        text = Tex("Distribution of sample means → Normal distribution").to_edge(UP)
         self.play(Write(text))
 
         self.wait(3)

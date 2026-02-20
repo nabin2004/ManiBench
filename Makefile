@@ -78,10 +78,12 @@ help:
 	@echo ""
 	@echo "  INFERENCE.NET"
 	@echo "  ───────────────────────────────────────────────────────────"
-	@echo "  make run-inference        Full eval via Inference.net"
-	@echo "  make inference-quick-test Smoke test via Inference.net"
-	@echo "  make inference-list-models List Inference.net models"
-	@echo "  make run PROVIDER=inference  Use Inference.net with any target"
+	@echo "  make run-inference             Full eval via Inference.net"
+	@echo "  make inference-quick-test      Smoke test via Inference.net"
+	@echo "  make inference-run-cot         Full CoT run via Inference.net"
+	@echo "  make inference-run-all-strategies  All 5 strategies via Inference.net"
+	@echo "  make inference-list-models     List Inference.net models"
+	@echo "  make run PROVIDER=inference    Use Inference.net with any target"
 	@echo ""
 	@echo "  ANALYSIS"
 	@echo "  ─────────────────────────────────────────────────────────────"
@@ -257,7 +259,7 @@ run-all-strategies:
 
 # ── Inference.net targets ─────────────────────────────────────────────────
 
-.PHONY: run-inference inference-quick-test inference-list-models
+.PHONY: run-inference inference-quick-test inference-list-models inference-run-cot inference-run-all-strategies
 
 ## Full evaluation via Inference.net (all inference models × all problems)
 run-inference:
@@ -296,6 +298,27 @@ for m in INFERENCE_MODELS:
     print(f"  {m.short_name:<22} {m.id:<50} {status}")
 endef
 export INFERENCE_LIST_MODELS_SCRIPT
+
+## Full run with chain-of-thought strategy via Inference.net
+inference-run-cot:
+	@echo "════════════════════════════════════════════════════════"
+	@echo "  ManiBench CoT Evaluation — Inference.net"
+	@echo "  Strategy: cot | Trials: $(TRIALS)"
+	@echo "════════════════════════════════════════════════════════"
+	$(PY) -m evaluation.run --provider inference --trials $(TRIALS) --strategy cot --timeout $(TIMEOUT)
+
+## Run all 5 prompt strategies sequentially via Inference.net (5 × inference runs)
+inference-run-all-strategies:
+	@echo "Running all prompt strategies via Inference.net ..."
+	@for strat in zero_shot few_shot cot constraint version_aware; do \
+		echo ""; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo "  Strategy: $$strat  [Inference.net]"; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		$(PY) -m evaluation.run --provider inference --trials $(TRIALS) --strategy $$strat --timeout $(TIMEOUT); \
+	done
+	@echo ""
+	@echo "✅  All Inference.net strategies complete. Run 'make analyze-all' for combined report."
 
 
 # ══════════════════════════════════════════════════════════════════════════

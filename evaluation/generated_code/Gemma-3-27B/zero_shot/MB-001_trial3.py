@@ -42,59 +42,71 @@ class ElasticCollision(Scene):
         )
         ax.add_coordinate_labels()
         ax.shift(DOWN * 3)
-
-        # Ellipse/Circle
-        ellipse = ax.plot(lambda x: np.sqrt(E - 0.5 * M * x**2), color=GREEN)
-
-        # Momentum line
-        slope = -np.sqrt(M / m)
-        intercept = P / m
-        momentum_line = ax.plot(lambda x: slope * x + intercept, color=YELLOW)
+        ax.add(Tex(r"$\sqrt{mv_1}$", ax.get_x_axis().label))
+        ax.add(Tex(r"$\sqrt{Mv_2}$", ax.get_y_axis().label))
 
         # Initial state
         self.play(Create(block_A), Create(block_B))
-        v_A_arrow.put_start_at(block_A).set_end_at(block_A + RIGHT * v0 * 0.5)
-        v_B_arrow.put_start_at(block_B).set_end_at(block_B + RIGHT * v0 * 0.5)
-        self.play(Create(v_A_arrow), Create(v_B_arrow))
+        self.play(Create(v_B_arrow.copy().move_to(block_B).set_angle(0)))
         self.play(Write(collision_count_text), Write(ke_eq), Write(momentum_eq))
-        self.play(Create(ax), Create(ellipse), Create(momentum_line))
 
-        # Collision loop
-        while n < 31:
+        # Simulation loop
+        for i in range(31):
             # Calculate velocities after collision
-            v1 = (P - M * 0) / m
-            v2 = (M * v0 - m * 0) / M
+            v_A = (2 * v0 * m) / (M + m)
+            v_B = v0 - v_A
 
-            # Update blocks
-            block_A.move_to(block_A + RIGHT * v2 * 0.1)
-            block_B.move_to(block_B + RIGHT * v1 * 0.1)
+            # Update block positions
+            block_A.move_to(block_A.get_center() + RIGHT * v_A)
+            block_B.move_to(block_B.get_center() + RIGHT * v_B)
 
             # Update velocity vectors
-            v_A_arrow.set_end_at(block_A + RIGHT * v2 * 0.5)
-            v_B_arrow.set_end_at(block_B + RIGHT * v1 * 0.5)
+            v_A_arrow.move_to(block_A).set_angle(0)
+            v_B_arrow.move_to(block_B).set_angle(0)
 
             # Increment collision counter
             n += 1
-            collision_count_text.become_transform(
-                Text(f"Collisions = {n}", font_size=24)
-            )
+            collision_count_text.set_text(f"Collisions = {n}")
+
+            # Phase space point
+            point = Dot(ax.c2p(np.sqrt(m * v_A), np.sqrt(M * v_B)), color=GREEN)
+            ax.add(point)
 
             self.play(
-                MoveAlongPath(v_A_arrow, block_A),
-                MoveAlongPath(v_B_arrow, block_B),
-                UpdateFromFunc(block_A, lambda x: x),
-                UpdateFromFunc(block_B, lambda x: x),
-                Write(collision_count_text)
+                Transform(v_A_arrow, v_A_arrow.copy().move_to(block_A).set_angle(0)),
+                Transform(v_B_arrow, v_B_arrow.copy().move_to(block_B).set_angle(0)),
+                Update(collision_count_text),
+                Create(point),
+                run_time=0.1
             )
 
-            # Check for end condition (v1 <= v2)
-            if v1 <= v2:
+            # Check for end condition (v_B <= 0)
+            if v_B <= 0:
                 break
 
         # Final state
         self.play(
-            block_A.animate.move_to(block_A + RIGHT * 5),
-            block_B.animate.move_to(block_B + RIGHT * 0)
+            block_B.animate.move_to(LEFT * 5),
+            v_B_arrow.animate.set_angle(180),
+            run_time=1
         )
-        self.play(FadeOut(v_A_arrow, v_B_arrow))
+
+        # Mass ratio demonstration
+        self.play(FadeOut(block_A, block_B, v_A_arrow, v_B_arrow, collision_count_text, ke_eq, momentum_eq))
+
+        # Phase space ellipse
+        ellipse = ax.plot(lambda x: np.sqrt(E - m * x**2) / np.sqrt(M), x_range=[0, np.sqrt(E / m)], color=YELLOW)
+        ax.add(ellipse)
+
+        # Momentum conservation line
+        line = ax.plot(lambda x: (P - m * x) / M, x_range=[0, P / m], color=ORANGE)
+        ax.add(line)
+
+        self.play(Create(ax), Create(ellipse), Create(line))
+
+        # Arc angle argument
+        theta = np.arctan(np.sqrt(m / M))
+        angle_text = Tex(r"$\theta = \arctan(\sqrt{\frac{m}{M}})$", font_size=24).to_edge(DOWN)
+        self.play(Write(angle_text))
+
         self.wait(2)

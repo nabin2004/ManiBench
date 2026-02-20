@@ -70,10 +70,16 @@ class FundamentalTheoremOfCalculus(Scene):
                 vertical_line.animate.set(ax_f_prime.get_vertical_line(x)),
                 graph_area.animate.set(ax_area.plot(f, x_range=[0, x])),
                 area_point.animate.move_to(ax_area.c2p(x, f(x))),
-                equation.animate.set(MathTex(
-            f"\\int_{0}^{{x}} f'(t) \, dt = f({x}) - f(0)"
-        ).next_to(ax_f, UP))
             )
             self.wait(1)
 
-        self.play(FadeOut(ax_f, ax_f_prime, ax_area, graph_f, graph_f_prime, vertical_line, graph_area, area_point, equation))
+        # Show f(0)
+        f_0 = f(0)
+        dot_f0 = Dot(ax_f.c2p(0, f_0), color=ORANGE)
+        label_f0 = MathTex("f(0) = 0").next_to(dot_f0, DOWN)
+        self.play(Create(dot_f0), Write(label_f0))
+
+        # Highlight the equation
+        self.play(Indicate(equation))
+
+        self.wait(2)

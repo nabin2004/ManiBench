@@ -2,61 +2,56 @@ from manim import *
 
 class TaylorSeriesExpansion(Scene):
     def construct(self):
-        # Function to approximate
-        f = lambda x: np.sin(x)
-        f_name = "sin(x)"
+        func = sin
+        func_name = "sin(x)"
+        x_range = [-PI, PI, 0.1]
+        n_terms = 6
+
+        # Original function
+        graph = func.plot(color=BLACK, x_range=x_range, label=func_name)
+        self.play(Create(graph))
 
         # Taylor series coefficients
-        coefficients = [1, 0, -1/6, 0, 1/120, 0, -1/5040, 0]  # sin(x) coefficients
-        num_terms = len(coefficients)
+        coefficients = [
+            1, 0, -1/2, 0, 1/24, 0, -1/720
+        ]
 
-        # Colors for each term
-        colors = [RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE, TEAL, PINK]
+        # Partial sums
+        partial_sums = []
+        colors = [RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE]
 
-        # Plot the original function
-        ax = Axes(
-            x_range=[-3*PI, 3*PI],
-            y_range=[-1.5, 1.5],
-            x_length=10,
-            y_length=5,
-            axis_config={"include_numbers": False},
-        )
-        ax.plot(f, color=BLACK, label=f_name)
-        ax.add_coordinate_labels()
-        self.play(Create(ax))
+        for i in range(n_terms + 1):
+            partial_sum = 0
+            term_texts = []
+            for j in range(i + 1):
+                term = coefficients[j] * (x ** j) / math.factorial(j)
+                partial_sum += term
+                term_text = MathTex(f"\\frac{{{coefficients[j]}}}{{{math.factorial(j)}}}x^{j}")
+                term_texts.append(term_text)
 
-        # Initial partial sum (P0)
-        p0 = lambda x: f(0)
-        p0_graph = ax.plot(p0, color=colors[0], label="P₀(x)")
-        self.play(Create(p0_graph))
+            partial_sum_func = partial_sum
+            partial_sum_graph = partial_sum_func.plot(color=colors[i % len(colors)], x_range=x_range, label=f"P_{i}(x)")
 
-        # Display coefficient for P0
-        coeff_text_0 = Tex(f"P₀(x) = {coefficients[0]}")
-        coeff_text_0.to_corner(UR)
-        self.play(Write(coeff_text_0))
+            # Display terms
+            term_group = VGroup(*term_texts)
+            term_group.arrange(DOWN, aligned_edge=LEFT)
+            term_group.next_to(graph, UP, buff=1)
 
-        # Progressively add terms
-        for i in range(1, num_terms):
-            # Calculate the next partial sum
-            pi = lambda x: sum(coefficients[:i+1] * (x**n) / np.math.factorial(n) for n in range(i+1))
-            pi_graph = ax.plot(pi, color=colors[i % len(colors)], label=f"P{i}(x)")
+            self.play(Create(partial_sum_graph))
+            self.play(Write(term_group))
 
-            # Display coefficient
-            coeff_text = Tex(f"P{i}(x) = " + " + ".join([f"{coefficients[n]}x^{n}/{np.math.factorial(n)}" for n in range(i+1)]))
-            coeff_text.to_corner(UR)
-            coeff_text.generate_target()
-            coeff_text.target.shift(DOWN * 0.5 * i)
+            partial_sums.append(partial_sum_graph)
 
-            self.play(
-                Create(pi_graph),
-                Transform(coeff_text_0, coeff_text.target)
-            )
-            self.play(Write(coeff_text))
-            self.wait(0.5)
+            # Convergence text
+            if i > 0:
+                convergence_text = Text("Higher-order terms improve approximation")
+                convergence_text.next_to(term_group, DOWN, buff=0.5)
+                self.play(Write(convergence_text))
 
-        # Convergence text
-        convergence_text = Tex("Higher-order terms improve approximation")
-        convergence_text.to_corner(DL)
-        self.play(Write(convergence_text))
+            self.wait(1)
+            if i > 0:
+                self.play(Unwrite(convergence_text))
+            self.play(Unwrite(term_group))
+            self.play(partial_sum_graph.animate.fade_out())
 
         self.wait(2)

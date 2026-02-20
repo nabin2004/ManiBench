@@ -2,52 +2,59 @@ from manim import *
 
 class DeterminantVisualization(Scene):
     def construct(self):
+        # Define the matrix A
+        A = [[2, 1], [1, 3]]
+        det_A = np.linalg.det(A)
+
         # Define the basis vectors
         u = np.array([1, 0])
-        v = np.array([0, 1])
+        v = np.array(0, 1)
 
         # Create the original parallelogram
         parallelogram = Polygon(
-            [0, 0], u, u + v, v
-        ).set_fill(BLUE, opacity=0.5)
+            [0, 0],
+            u + [0, 0],
+            u + v + [0, 0],
+            v + [0, 0],
+            color=BLUE,
+            fill_opacity=0.5
+        )
         parallelogram.set_label("Original Area = 1", font_size=24)
 
-        # Define the matrix A
-        A = np.array([[2, 1], [1, 3]])
+        # Create the matrix transformation
+        def transform_point(point):
+            return A @ point
+
+        # Animate the transformation
+        def update_parallelogram(mob, alpha):
+            new_parallelogram = Polygon(
+                transform_point([0, 0]),
+                transform_point(u) + [0, 0],
+                transform_point(u + v) + [0, 0],
+                transform_point(v) + [0, 0],
+                color=BLUE,
+                fill_opacity=0.5
+            )
+            mob.become(new_parallelogram)
+            mob.set_label(f"New Area = {abs(det_A):.2f}", font_size=24)
+            return mob
 
         # Create the matrix text
-        matrix_text = Tex(r"A = \begin{bmatrix} 2 & 1 \\ 1 & 3 \end{bmatrix}")
-
-        # Calculate the determinant
-        det_A = np.linalg.det(A)
+        matrix_text = Tex(f"A = \\begin{{pmatrix}} {A[0][0]} & {A[0][1]} \\\\ {A[1][0]} & {A[1][1]} \\end{{pmatrix}}}")
+        matrix_text.to_edge(UP)
 
         # Create the determinant text
-        det_text = Tex(r"|det(A)| = ", "%.2f" % det_A).scale(0.75)
+        det_text = Tex(f"det(A) = {det_A:.2f}")
+        det_text.next_to(matrix_text, DOWN)
 
-        # Group the original elements
-        original_group = VGroup(parallelogram, matrix_text, det_text)
-        original_group.arrange(DOWN)
+        # Animate the determinant value
+        def update_det_text(mob, alpha):
+            new_det = np.linalg.det(A)
+            mob.set_text(f"det(A) = {new_det:.2f}")
+            return mob
 
-        # Animate the transformation
-        transformed_parallelogram = parallelogram.copy()
-        transformed_parallelogram.apply_matrix(A)
-
-        # Update the determinant text
-        new_det_text = Tex(r"New Area = ", "%.2f" % abs(det_A)).scale(0.75)
-
-        # Group the transformed elements
-        transformed_group = VGroup(transformed_parallelogram, matrix_text, new_det_text)
-        transformed_group.arrange(DOWN)
-
-        # Show the original parallelogram
-        self.play(Create(parallelogram))
-        self.play(Write(matrix_text))
-        self.play(Write(det_text))
-        self.wait(2)
-
-        # Animate the transformation
-        self.play(
-            Transform(parallelogram, transformed_parallelogram),
-            Transform(det_text, new_det_text)
-        )
+        # Play the animation
+        self.play(Create(parallelogram), Write(matrix_text), Write(det_text))
+        self.play(Transform(parallelogram, update_parallelogram),
+                  Update(det_text, update_det_text))
         self.wait(2)

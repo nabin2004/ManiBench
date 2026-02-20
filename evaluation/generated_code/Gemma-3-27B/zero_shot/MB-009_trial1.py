@@ -53,8 +53,9 @@ class FundamentalTheoremOfCalculus(Scene):
         area_point = Dot(ax_area.c2p(x_val, f(x_val)), color=YELLOW)
 
         # Equation display
-        equation = MathTex(r"\int_{0}^{x} f'(t) \, dt = f(x) - f(0)")
-        equation.next_to(ax_f, UP)
+        equation = MathTex(
+            "\\int_{0}^{x} f'(t) \, dt = f(x) - f(0)"
+        ).next_to(ax_f, UP)
 
         # Initial setup
         self.play(Create(ax_f), Create(ax_f_prime), Create(ax_area))
@@ -72,6 +73,13 @@ class FundamentalTheoremOfCalculus(Scene):
             )
             self.wait(1)
 
-        # Clean up
-        self.play(FadeOut(ax_f, ax_f_prime, ax_area, graph_f, graph_f_prime, vertical_line, graph_area, area_point, equation))
-        self.wait(1)
+        # Show f(0)
+        f_0 = f(0)
+        dot_f0 = Dot(ax_f.c2p(0, f_0), color=ORANGE)
+        label_f0 = MathTex("f(0) = 0").next_to(dot_f0, DOWN)
+        self.play(Create(dot_f0), Write(label_f0))
+
+        # Highlight the equation
+        self.play(Indicate(equation))
+
+        self.wait(2)

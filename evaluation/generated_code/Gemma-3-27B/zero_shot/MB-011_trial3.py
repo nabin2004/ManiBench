@@ -8,65 +8,73 @@ class HairyBallTheorem(Scene):
         self.play(Create(sphere))
         self.play(Rotate(sphere, angle=TAU, axis=Z, run_time=5))
 
-        # 2. Vector Field (Arrows)
-        num_arrows = 100
-        arrows = VGroup(*[Arrow(radius=0.1, color=YELLOW) for _ in range(num_arrows)])
+        # 2. Vector Field
+        num_vectors = 100
+        vectors = VGroup(*[Arrow(radius=0.2, color=YELLOW) for _ in range(num_vectors)])
         
-        def get_arrow_positions(sphere, num_arrows):
-            positions = []
-            for _ in range(num_arrows):
-                angle1 = np.random.uniform(0, TAU)
-                angle2 = np.random.uniform(0, PI)
-                x = sphere.radius * np.sin(angle2) * np.cos(angle1)
-                y = sphere.radius * np.sin(angle2) * np.sin(angle1)
-                z = sphere.radius * np.cos(angle2)
-                positions.append(np.array([x, y, z]))
-            return positions
+        def get_vector_direction(angle1, angle2):
+            x = np.sin(angle1) * np.cos(angle2)
+            y = np.sin(angle1) * np.sin(angle2)
+            z = np.cos(angle1)
+            return np.array([x, y, z])
 
-        arrow_positions = get_arrow_positions(sphere, num_arrows)
-        for i, arrow in enumerate(arrows):
-            arrow.move_to(arrow_positions[i])
-            arrow.set_angle(np.random.uniform(0, TAU))
-        
-        self.play(Create(arrows))
+        def map_to_sphere(point):
+            return point / np.linalg.norm(point)
+
+        for vector in vectors:
+            angle1 = np.random.uniform(0, TAU)
+            angle2 = np.random.uniform(0, TAU)
+            direction = get_vector_direction(angle1, angle2)
+            
+            # Project direction onto sphere
+            direction = map_to_sphere(direction)
+            
+            vector.set_angle(UP, direction)
+            vector.move_to(sphere.point_from_angle(angle1, angle2))
+            
+        self.play(Create(vectors))
 
         # 3. Attempt Continuous Orientation
         self.play(
-            *[
-                arrow.animate.set_angle(arrow.angle + 0.1)
-                for arrow in arrows
-            ],
-            run_time=5
+            vectors.animate.shift(DOWN * 0.5).scale(0.8)
         )
-
+        
         # 4. Show Impossibility - Bald Spot
         bald_spot = Dot(radius=0.1, color=RED)
-        bald_spot.move_to(UP * sphere.radius)  # Example bald spot location
+        bald_spot.move_to(sphere.point_from_angle(0, 0))  # Example bald spot
+        
         self.play(Create(bald_spot))
         self.play(
-            Indicate(bald_spot, color=RED, scale_factor=1.2),
-            Write(Text("Bald Spot", font_size=24, color=RED).next_to(bald_spot, UP))
+            Indicate(bald_spot, color=RED, scale_factor=1.5)
         )
+        
+        text_bald_spot = Tex("Bald Spot", color=RED).next_to(bald_spot, UP)
+        self.play(Write(text_bald_spot))
 
-        # 5. Combing Process (Simplified)
-        # This is a simplification.  A true demonstration would be much more complex.
-        line1 = Line(start=LEFT * sphere.radius, end=RIGHT * sphere.radius, color=GREEN)
-        line2 = Line(start=DOWN * sphere.radius, end=UP * sphere.radius, color=ORANGE)
-        self.play(Create(line1), Create(line2))
+        # 5. Animate 'Combing' Process (Simplified)
+        # This is a simplification, a full demonstration would be complex
         
+        # Create a circle to represent a 'comb'
+        comb = Circle(radius=0.5, color=GREEN)
+        comb.move_to(sphere.point_from_angle(TAU / 4, 0))
+        self.play(Create(comb))
+        
+        # Animate the comb moving around the sphere
         self.play(
-            line1.animate.shift(UP * 0.5),
-            line2.animate.shift(RIGHT * 0.5)
+            Rotate(comb, angle=TAU, axis=Z, run_time=3)
         )
         
-        self.play(
-            Write(Text("Tangency Requirements Fail", font_size=24, color=WHITE).to_edge(DOWN))
-        )
+        # Show where tangency requirements fail (simplified)
+        failure_point = Dot(radius=0.1, color=ORANGE)
+        failure_point.move_to(sphere.point_from_angle(3 * TAU / 4, 0))
+        self.play(Create(failure_point))
+        
+        text_failure = Tex("Tangency Failure", color=ORANGE).next_to(failure_point, UP)
+        self.play(Write(text_failure))
 
         # 6. Highlight Bald Spot
         self.play(
-            Indicate(bald_spot, color=RED, scale_factor=1.5),
-            FadeOut(line1, line2)
+            Indicate(bald_spot, color=RED, scale_factor=2)
         )
         
         self.wait(2)

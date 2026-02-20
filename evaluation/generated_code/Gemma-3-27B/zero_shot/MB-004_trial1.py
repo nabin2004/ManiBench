@@ -37,31 +37,22 @@ class EigenvectorTransformation(Scene):
 
         # Apply the transformation
         matrix_transformation = TransformationMatrix(A)
-        transformed_grid = grid_group.copy().transform(matrix_transformation)
-        transformed_eigenvector1 = eigenvector1.copy().transform(matrix_transformation)
-        transformed_eigenvector2 = eigenvector2.copy().transform(matrix_transformation)
-
-        self.play(Transform(grid_group, transformed_grid),
-                  Transform(eigenvector1, transformed_eigenvector1),
-                  Transform(eigenvector2, transformed_eigenvector2),
-                  run_time=2)
-
+        
+        # Animate the transformation
+        self.play(
+            ApplyPoint(matrix_transformation, grid_group),
+            ApplyPoint(matrix_transformation, eigenvector_group),
+            run_time=2
+        )
         self.wait(1)
 
         # Highlight that eigenvectors are special
-        eigenvector1_line = Line(ORIGIN, v1 * 5, color=RED)
-        eigenvector2_line = Line(ORIGIN, v2 * 5, color=BLUE)
-        transformed_eigenvector1_line = Line(ORIGIN, transformed_eigenvector1.get_end(), color=RED)
-        transformed_eigenvector2_line = Line(ORIGIN, transformed_eigenvector2.get_end(), color=BLUE)
-
-        special_text = Tex("Eigenvectors are special!").to_edge(UP)
-
+        eigenvector1_transformed = Arrow(ORIGIN, matrix_transformation.get_vector(v1) * 5, buff=0, color=RED)
+        eigenvector2_transformed = Arrow(ORIGIN, matrix_transformation.get_vector(v2) * 5, buff=0, color=BLUE)
+        
         self.play(
-            FadeOut(eigenvector1, eigenvector2, lambda1_text, lambda2_text),
-            Create(eigenvector1_line),
-            Create(eigenvector2_line),
-            Create(transformed_eigenvector1_line),
-            Create(transformed_eigenvector2_line),
-            Write(special_text)
+            Transform(eigenvector1, eigenvector1_transformed),
+            Transform(eigenvector2, eigenvector2_transformed),
+            Write(Tex("Eigenvectors only change length!").to_edge(UP))
         )
         self.wait(2)

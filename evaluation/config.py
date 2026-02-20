@@ -75,35 +75,50 @@ class ModelSpec:
 
 # Default model roster — edit or override via CLI
 DEFAULT_MODELS: list[ModelSpec] = [
+    # ModelSpec(
+    #     id="openai/gpt-4o-2024-11-20",
+    #     short_name="GPT-4o",
+    #     provider="OpenAI",
+    # ),
+    # ModelSpec(
+    #     id="anthropic/claude-sonnet-4",
+    #     short_name="Claude-Sonnet-4",
+    #     provider="Anthropic",
+    # ),
+    # ModelSpec(
+    #     id="google/gemini-2.5-pro-preview",
+    #     short_name="Gemini-2.5-Pro",
+    #     provider="Google",
+    # ),
+    # ModelSpec(
+    #     id="deepseek/deepseek-r1-0528:free",
+    #     short_name="DeepSeek-R1-0528",
+    #     provider="DeepSeek",
+    # ),
     ModelSpec(
-        id="openai/gpt-4o-2024-11-20",
-        short_name="GPT-4o",
-        provider="OpenAI",
-    ),
+        id="qwen/qwen3.5-plus-02-15",
+        short_name="Qwen3.5-Plus",
+        provider="Qwen (Alibaba)",
+    ),  
     ModelSpec(
-        id="anthropic/claude-sonnet-4",
-        short_name="Claude-Sonnet-4",
-        provider="Anthropic",
-    ),
-    ModelSpec(
-        id="google/gemini-2.5-pro-preview",
-        short_name="Gemini-2.5-Pro",
-        provider="Google",
-    ),
-    ModelSpec(
-        id="deepseek/deepseek-r1",
-        short_name="DeepSeek-R1",
-        provider="DeepSeek",
-    ),
-    ModelSpec(
-        id="meta-llama/llama-4-maverick",
-        short_name="Llama-4-Maverick",
+        id="meta-llama/llama-3.1-8b-instruct",
+        short_name="Llama-3.1-8B",
         provider="Meta",
+    ),
+    ModelSpec(
+        id="moonshotai/kimi-k2.5",
+        short_name="Kimi-K2.5",
+        provider="Moonshot AI",
+    ),
+    ModelSpec(
+        id="qwen/qwen3-235b-a22b-2507",
+        short_name="Qwen3-235B-A22B",      
+        provider="Qwen (Alibaba)",
     ),
     ModelSpec(
         id="qwen/qwen-2.5-coder-32b-instruct",
         short_name="Qwen-2.5-Coder",
-        provider="Alibaba",
+        provider="Qwen (Alibaba)",
     ),
 ]
 
@@ -191,6 +206,36 @@ INFERENCE_MODELS: list[ModelSpec] = [
         id="google/gemma-3-27b-instruct/bf-16",
         short_name="Gemma-3-27B",
         provider="Google (via Inference.net)",
+    ),
+    ModelSpec(
+        id="meta-llama/llama-3.3-70b-instruct/fp-8",
+        short_name="Llama-3.3-70B",
+        provider="Meta (via Inference.net)",
+    ),
+    ModelSpec(
+        id="deepseek/deepseek-r1-0528/fp-8",
+        short_name="DeepSeek-R1-0528",
+        provider="DeepSeek (via Inference.net)",
+    ),
+    ModelSpec(
+        id="deepseek/deepseek-v3-0324/fp-8",
+        short_name="DeepSeek-V3-0324",
+        provider="DeepSeek (via Inference.net)",
+    ),
+    ModelSpec(
+        id="qwen/qwq-32b/fp-8",
+        short_name="QwQ-32B",
+        provider="Alibaba (via Inference.net)",
+    ),
+    ModelSpec(
+        id="qwen/qwen3-30b-a3b/fp8",
+        short_name="Qwen3-30B-A3B",
+        provider="Alibaba (via Inference.net)",
+    ),
+    ModelSpec(
+        id="mistralai/mistral-nemo-12b-instruct/fp-8",
+        short_name="Mistral-Nemo-12B",
+        provider="Mistral (via Inference.net)",
     ),
 ]
 

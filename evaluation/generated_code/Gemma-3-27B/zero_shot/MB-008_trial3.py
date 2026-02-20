@@ -82,7 +82,7 @@ class ChainRuleAnimation(Scene):
 
         self.play(FadeOut(group_g, group_f, group_y, group_arrows, group_chain_rule))
 
-        # Display the derivative composition
-        derivative_composition = Tex("d/dx[f(g(x))] = f'(g(x)) \\cdot g'(x)").to_edge(UP)
-        self.play(Write(derivative_composition))
+        # Display the derivative formula
+        derivative_formula = Tex("d/dx[f(g(x))] = f'(g(x)) \\cdot g'(x)").to_edge(UP)
+        self.play(Write(derivative_formula))
         self.wait(2)

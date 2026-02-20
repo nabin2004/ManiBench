@@ -44,24 +44,23 @@ class BayesTheoremAnimation(Scene):
         highlight_rect = SurroundingRectangle(sick_plus_text, color=YELLOW, buff=0.2)
         self.play(Create(highlight_rect))
 
-        # Bayes' theorem calculation
-        bayes_theorem_text = Tex("P(Sick | +) = P(Sick $\\cap$ +) / (P(Sick $\\cap$ +) + P(Not Sick $\\cap$ +))", color=WHITE)
-        bayes_theorem_text.to_edge(UP)
-        self.play(Write(bayes_theorem_text))
+        # Calculation
+        calculation_text = Tex("P(Sick | +) = P(Sick $\\cap$ +) / (P(Sick $\\cap$ +) + P(Not Sick $\\cap$ +))", color=WHITE)
+        calculation_text.to_edge(UP)
+        self.play(Write(calculation_text))
 
-        # Substitute values
-        substituted_text = Tex(f"P(Sick | +) = {true_positives:.0f} / ({true_positives:.0f} + {false_positives:.0f})", color=WHITE)
-        substituted_text.next_to(bayes_theorem_text, DOWN)
-        self.play(Write(substituted_text))
+        # Final probability
+        denominator = true_positives + false_positives
+        if denominator == 0:
+            probability = 0
+        else:
+            probability = true_positives / denominator
 
-        # Calculate and display final probability
-        final_probability = true_positives / (true_positives + false_positives)
-        final_probability_text = Tex(f"P(Sick | +) ≈ {final_probability:.2f}", color=WHITE)
-        final_probability_text.next_to(substituted_text, DOWN)
+        final_probability_text = Tex(f"P(Sick | +) = {probability:.2f}", color=GREEN).next_to(calculation_text, DOWN)
         self.play(Write(final_probability_text))
 
-        # Paradox explanation
-        paradox_text = Tex("Despite 95% test accuracy, low prevalence leads to a high false positive rate.", color=YELLOW)
+        # Explanation
+        paradox_text = Tex("Even with a 95% accurate test, a low disease prevalence leads to a high false positive rate.", color=RED)
         paradox_text.next_to(final_probability_text, DOWN)
         self.play(Write(paradox_text))
 

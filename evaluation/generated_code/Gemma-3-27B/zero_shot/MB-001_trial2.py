@@ -27,9 +27,9 @@ class ElasticCollision(Scene):
         collision_count_text.to_edge(UP)
 
         # Conservation equations
-        ke_eq = MathTex(r"\frac{1}{2}m_1v_1^2 + \frac{1}{2}m_2v_2^2 = E", font_size=24)
+        ke_eq = Tex(r"$\frac{1}{2}mv_1^2 + \frac{1}{2}Mv_2^2 = E$", font_size=24)
         ke_eq.next_to(collision_count_text, DOWN)
-        momentum_eq = MathTex(r"m_1v_1 + m_2v_2 = P", font_size=24)
+        momentum_eq = Tex(r"$mv_1 + Mv_2 = P$", font_size=24)
         momentum_eq.next_to(ke_eq, DOWN)
 
         # Phase space
@@ -42,62 +42,71 @@ class ElasticCollision(Scene):
         )
         ax.add_coordinate_labels()
         ax.shift(DOWN * 3)
-
-        # Ellipse/Circle
-        ellipse = ax.plot(lambda x: np.sqrt(E - m * x**2) / np.sqrt(m), x_range=[0, np.sqrt(E / m)])
-        
-        # Momentum line
-        slope = -np.sqrt(M / m)
-        intercept = P / np.sqrt(m)
-        momentum_line = ax.plot(lambda x: slope * x + intercept, x_range=[0, np.sqrt(E / m)])
+        ax.add(Tex(r"$\sqrt{mv_1}$", ax.get_x_axis().label))
+        ax.add(Tex(r"$\sqrt{Mv_2}$", ax.get_y_axis().label))
 
         # Initial state
         self.play(Create(block_A), Create(block_B))
-        v_A_arrow.put_start_at(block_A).set_end_at(block_A + RIGHT * v0 * 0.5)
-        v_B_arrow.put_start_at(block_B).set_end_at(block_B + RIGHT * v0 * 0.5)
-        self.play(Create(v_A_arrow), Create(v_B_arrow))
-        self.play(Create(collision_count_text), Create(ke_eq), Create(momentum_eq))
-        self.play(Create(ax), Create(ellipse), Create(momentum_line))
+        self.play(Create(v_B_arrow.copy().move_to(block_B).set_angle(0)))
+        self.play(Write(collision_count_text), Write(ke_eq), Write(momentum_eq))
 
-        # Collision loop
-        while n < 31:
+        # Simulation loop
+        for i in range(31):
             # Calculate velocities after collision
             v_A = (2 * v0 * m) / (M + m)
-            v_B = (v0 * (M - m)) / (M + m)
+            v_B = v0 - v_A
 
-            # Update blocks
-            block_A.generate_target()
-            block_B.generate_target()
-            block_A.target.move_to(block_A.get_center() + RIGHT * v_A * 0.5)
-            block_B.target.move_to(block_B.get_center() + RIGHT * v_B * 0.5)
+            # Update block positions
+            block_A.move_to(block_A.get_center() + RIGHT * v_A)
+            block_B.move_to(block_B.get_center() + RIGHT * v_B)
 
             # Update velocity vectors
-            v_A_arrow.generate_target()
-            v_B_arrow.generate_target()
-            v_A_arrow.target.put_start_at(block_A.target).set_end_at(block_A.target + RIGHT * v_A * 0.5)
-            v_B_arrow.target.put_start_at(block_B.target).set_end_at(block_B.target + RIGHT * v_B * 0.5)
+            v_A_arrow.move_to(block_A).set_angle(0)
+            v_B_arrow.move_to(block_B).set_angle(0)
 
             # Increment collision counter
             n += 1
-            collision_count_text.become(Text(f"Collisions = {n}", font_size=24))
+            collision_count_text.set_text(f"Collisions = {n}")
 
-            # Animate collision
+            # Phase space point
+            point = Dot(ax.c2p(np.sqrt(m * v_A), np.sqrt(M * v_B)), color=GREEN)
+            ax.add(point)
+
             self.play(
-                MoveToTarget(block_A),
-                MoveToTarget(block_B),
-                MoveToTarget(v_A_arrow),
-                MoveToTarget(v_B_arrow),
-                collision_count_text.animate.become(Text(f"Collisions = {n}", font_size=24))
+                Transform(v_A_arrow, v_A_arrow.copy().move_to(block_A).set_angle(0)),
+                Transform(v_B_arrow, v_B_arrow.copy().move_to(block_B).set_angle(0)),
+                Update(collision_count_text),
+                Create(point),
+                run_time=0.1
             )
 
-            # Update velocities for next iteration
-            v0 = v_B
-            
-            if v0 <= 0.1:
+            # Check for end condition (v_B <= 0)
+            if v_B <= 0:
                 break
 
         # Final state
-        self.play(Wait(1))
-        self.play(FadeOut(v_A_arrow, v_B_arrow, collision_count_text, ke_eq, momentum_eq, ax, ellipse, momentum_line))
-        self.play(block_A.animate.move_to(RIGHT * 20), block_B.animate.move_to(LEFT * 5))
+        self.play(
+            block_B.animate.move_to(LEFT * 5),
+            v_B_arrow.animate.set_angle(180),
+            run_time=1
+        )
+
+        # Mass ratio demonstration
+        self.play(FadeOut(block_A, block_B, v_A_arrow, v_B_arrow, collision_count_text, ke_eq, momentum_eq))
+
+        # Phase space ellipse
+        ellipse = ax.plot(lambda x: np.sqrt(E - m * x**2) / np.sqrt(M), x_range=[0, np.sqrt(E / m)], color=YELLOW)
+        ax.add(ellipse)
+
+        # Momentum conservation line
+        line = ax.plot(lambda x: (P - m * x) / M, x_range=[0, P / m], color=ORANGE)
+        ax.add(line)
+
+        self.play(Create(ax), Create(ellipse), Create(line))
+
+        # Arc angle argument
+        theta = np.arctan(np.sqrt(m / M))
+        angle_text = Tex(r"$\theta = \arctan(\sqrt{\frac{m}{M}})$", font_size=24).to_edge(DOWN)
+        self.play(Write(angle_text))
+
         self.wait(2)
