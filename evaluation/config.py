@@ -80,11 +80,11 @@ DEFAULT_MODELS: list[ModelSpec] = [
     #     short_name="GPT-4o",
     #     provider="OpenAI",
     # ),
-    ModelSpec(
-        id="anthropic/claude-opus-4.6",
-        short_name="Claude-Opus-4.6",
-        provider="Anthropic",
-    ),
+    # ModelSpec(
+    #     id="anthropic/claude-opus-4.6",
+    #     short_name="Claude-Opus-4.6",
+    #     provider="Anthropic",
+    # ),
     ModelSpec(
         id="anthropic/claude-sonnet-4",
         short_name="Claude-Sonnet-4",
