@@ -1,61 +1,65 @@
 """
-ManiBench Evaluation — OpenRouter API Client
-===============================================
-Handles LLM code generation via OpenRouter's unified API.
-Supports retries, rate limiting, token tracking, and error handling.
+ManiBench Evaluation — OpenAI-Compatible API Client
+=====================================================
+Handles LLM code generation via any OpenAI-compatible chat completions API
+(vLLM, LocalAI, LM Studio, Ollama OpenAI mode, etc.).
+
+Auth: optional Bearer <OPENAI_API_KEY> (local servers often need none).
+
+Uses httpx for reliable timeout enforcement.
 """
 
 import time
-import json
 import re
 from typing import Any
-
-import requests
+import httpx
 
 from evaluation.config import (
-    OPENROUTER_API_KEY,
-    OPENROUTER_BASE_URL,
-    OPENROUTER_HEADERS,
-    REQUEST_TIMEOUT,
+    OPENAI_API_KEY,
     MAX_RETRIES,
     RETRY_DELAY,
     ModelSpec,
 )
 
+# Hard timeout: (connect, read, write, pool) — all in seconds
+HTTPX_TIMEOUT = httpx.Timeout(10.0, read=120.0, write=30.0, pool=10.0)
 
-class OpenRouterError(Exception):
-    """Raised on unrecoverable API errors."""
+
+class OpenAICompatibleError(Exception):
+    """Raised on unrecoverable OpenAI-compatible API errors."""
     pass
 
 
-class OpenRouterClient:
+class OpenAICompatibleClient:
     """
-    Stateless client for OpenRouter chat completions.
+    Stateless client for OpenAI-compatible chat completions (e.g. vLLM).
 
     Usage:
-        client = OpenRouterClient()
+        client = OpenAICompatibleClient(base_url="http://localhost:8000/v1")
         result = client.generate(model_spec, messages)
     """
 
     def __init__(
         self,
+        base_url: str,
         api_key: str | None = None,
-        base_url: str | None = None,
     ):
-        self.api_key = api_key or OPENROUTER_API_KEY
-        if not self.api_key:
-            raise OpenRouterError(
-                "OpenRouter API token not set. "
-                "Pass --api-key, export OPENROUTER_API_KEY, or add it to .env. "
-                "Get a key at https://openrouter.ai/keys"
+        base_url = (base_url or "").rstrip("/")
+        if not base_url:
+            raise OpenAICompatibleError(
+                "base_url is required for the openai provider. "
+                "Pass --base-url or set OPENAI_BASE_URL "
+                "(e.g. http://localhost:8000/v1)."
             )
-        self.base_url = (base_url or OPENROUTER_BASE_URL).rstrip("/")
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            **OPENROUTER_HEADERS,
-        })
+        self.base_url = base_url
+        # Empty string means unauthenticated (common for local vLLM)
+        self.api_key = api_key if api_key is not None else OPENAI_API_KEY
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     def generate(
         self,
@@ -85,36 +89,48 @@ class OpenRouterClient:
             "temperature": temperature if temperature is not None else model.temperature,
             "max_tokens": max_tokens or model.max_tokens,
             "top_p": model.top_p,
+            "stream": False,
         }
 
-        last_error = None
+        headers = self._headers()
+
+        last_error: Exception | None = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 t0 = time.monotonic()
-                resp = self.session.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    timeout=REQUEST_TIMEOUT,
-                )
+                with httpx.Client(timeout=HTTPX_TIMEOUT) as client:
+                    resp = client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
                 latency_ms = (time.monotonic() - t0) * 1000
 
                 if resp.status_code == 429:
-                    # Rate limited — wait and retry
                     wait = RETRY_DELAY * attempt
                     time.sleep(wait)
                     continue
 
                 if resp.status_code != 200:
                     error_body = resp.text[:500]
-                    raise OpenRouterError(
+                    raise OpenAICompatibleError(
                         f"HTTP {resp.status_code}: {error_body}"
                     )
 
                 data = resp.json()
 
-                # Parse response
-                choice = data["choices"][0]
-                content = choice["message"]["content"]
+                choices = data.get("choices", [])
+                if not choices:
+                    raise OpenAICompatibleError(
+                        f"No choices in API response: {str(data)[:300]}"
+                    )
+
+                choice = choices[0]
+                message = choice.get("message", {})
+                if isinstance(message, str):
+                    content = message
+                else:
+                    content = message.get("content", "")
                 usage = data.get("usage", {})
 
                 return {
@@ -128,13 +144,18 @@ class OpenRouterClient:
                     "finish_reason": choice.get("finish_reason", "unknown"),
                 }
 
-            except (requests.ConnectionError, requests.Timeout) as e:
+            except httpx.TimeoutException as e:
+                last_error = e
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY * attempt)
+                continue
+            except httpx.ConnectError as e:
                 last_error = e
                 if attempt < MAX_RETRIES:
                     time.sleep(RETRY_DELAY * attempt)
                 continue
 
-        raise OpenRouterError(
+        raise OpenAICompatibleError(
             f"Failed after {MAX_RETRIES} attempts: {last_error}"
         )
 
@@ -148,20 +169,16 @@ class OpenRouterClient:
           - ``` ... ``` blocks
           - Raw code (if no code fence found)
         """
-        # Try ```python block first
         pattern = r"```python\s*\n(.*?)```"
         matches = re.findall(pattern, content, re.DOTALL)
         if matches:
-            # Return the longest match (in case of multiple blocks)
             return max(matches, key=len).strip()
 
-        # Try generic ``` block
         pattern = r"```\s*\n(.*?)```"
         matches = re.findall(pattern, content, re.DOTALL)
         if matches:
             return max(matches, key=len).strip()
 
-        # Fallback: look for 'from manim import' as code start
         lines = content.split("\n")
         code_start = None
         for i, line in enumerate(lines):
@@ -172,14 +189,14 @@ class OpenRouterClient:
         if code_start is not None:
             return "\n".join(lines[code_start:]).strip()
 
-        # Last resort: return full content
         return content.strip()
 
     def list_models(self) -> list[dict]:
-        """Fetch available models from OpenRouter."""
-        resp = self.session.get(
-            f"{self.base_url}/models",
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json().get("data", [])
+        """Fetch available models from the OpenAI-compatible /models endpoint."""
+        with httpx.Client(timeout=HTTPX_TIMEOUT) as client:
+            resp = client.get(
+                f"{self.base_url}/models",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return resp.json().get("data", [])

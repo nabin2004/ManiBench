@@ -7,6 +7,7 @@ click==8.3.1
 cloup==3.0.8
 decorator==5.2.1
 glcontext==3.0.0
+httpx==0.28.1
 idna==3.11
 isosurfaces==0.1.2
 loadenv==0.1.1

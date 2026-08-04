@@ -36,7 +36,7 @@ for _d in (RESULTS_DIR, LOGS_DIR, GENERATED_CODE_DIR):
 # OpenRouter API
 # ---------------------------------------------------------------------------
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_HEADERS = {
     "HTTP-Referer": "https://huggingface.co/datasets/nabin2004/ManiBench",
     "X-Title": "ManiBench Evaluation",
@@ -49,9 +49,15 @@ INFERENCE_API_KEY = os.getenv("INFERENCE_API_KEY", "")
 INFERENCE_BASE_URL = os.getenv("INFERENCE_BASE_URL", "https://api.inference.net/v1")
 
 # ---------------------------------------------------------------------------
+# OpenAI-compatible API (vLLM, LocalAI, LM Studio, etc.)
+# ---------------------------------------------------------------------------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
+
+# ---------------------------------------------------------------------------
 # Supported providers
 # ---------------------------------------------------------------------------
-SUPPORTED_PROVIDERS = ["openrouter", "inference"]
+SUPPORTED_PROVIDERS = ["openrouter", "inference", "openai"]
 
 # Per-request settings
 REQUEST_TIMEOUT = (10, 120)    # (connect_timeout, read_timeout) in seconds
@@ -144,7 +150,9 @@ class EvalConfig:
     save_video: bool = False                 # keep rendered .mp4 files
     seed: int = 42                           # for reproducibility
     parallel_models: bool = False            # run models in parallel (careful with rate limits)
-    provider: str = "openrouter"             # openrouter | inference
+    provider: str = "openrouter"             # openrouter | inference | openai
+    base_url: Optional[str] = None           # required for provider=openai (vLLM, etc.)
+    api_key: Optional[str] = None            # overrides provider env key when set
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +261,8 @@ def get_models_for_provider(provider: str) -> list[ModelSpec]:
     """Return the default model list for a given provider name."""
     if provider == "inference":
         return INFERENCE_MODELS
+    if provider == "openai":
+        return []  # ad-hoc models via CLI --models (no fixed roster)
     return DEFAULT_MODELS          # openrouter is the default
 
 

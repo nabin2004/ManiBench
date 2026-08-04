@@ -17,13 +17,23 @@ Usage:
     # Quick test run (1 trial)
     python -m evaluation.run --trials 1 --models claude-sonnet-4 --problems MB-001
 
+    # OpenAI-compatible / vLLM endpoint
+    python -m evaluation.run --provider openai \\
+        --base-url http://localhost:8000/v1 \\
+        --models Qwen/Qwen2.5-Coder-7B-Instruct --trials 1
+
 Environment:
-    OPENROUTER_API_KEY — required, your OpenRouter API key
+    OPENROUTER_API_KEY — required for --provider openrouter (or pass --api-key)
+    OPENROUTER_BASE_URL — optional OpenRouter base URL override
+    INFERENCE_API_KEY  — required for --provider inference (or pass --api-key)
+    OPENAI_BASE_URL    — base URL for --provider openai (or use --base-url)
+    OPENAI_API_KEY     — optional for --provider openai (or pass --api-key)
 """
 
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -32,10 +42,16 @@ from pathlib import Path
 from evaluation.config import (
     DATASET_PATH,
     DEFAULT_MODELS,
+    INFERENCE_API_KEY,
     INFERENCE_MODELS,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
     SUPPORTED_PROVIDERS,
     EvalConfig,
     GENERATED_CODE_DIR,
+    ModelSpec,
     RESULTS_DIR,
     get_model_by_short_name,
     get_models_for_provider,
@@ -43,6 +59,7 @@ from evaluation.config import (
 from evaluation.logger import StructuredLogger
 from evaluation.openrouter_client import OpenRouterClient, OpenRouterError
 from evaluation.inference_client import InferenceNetClient, InferenceNetError
+from evaluation.openai_client import OpenAICompatibleClient, OpenAICompatibleError
 from evaluation.prompts import build_messages
 from evaluation.metrics import (
     compute_executability,
@@ -80,8 +97,30 @@ def filter_problems(problems: list[dict], ids: list[str] | None) -> list[dict]:
     return filtered
 
 
+def _filesystem_safe_name(name: str) -> str:
+    """Turn a served model id into a safe short_name for dirs/filenames."""
+    safe = re.sub(r"[^\w.\-]+", "-", name.strip())
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    return safe or "model"
+
+
 def resolve_models(names: list[str] | None, provider: str = "openrouter"):
     """Resolve model short names to ModelSpec objects."""
+    # OpenAI-compatible: CLI names are the served model IDs (no fixed roster)
+    if provider == "openai":
+        if not names:
+            print("ERROR: --models is required for --provider openai "
+                  "(pass the served model id(s), e.g. Qwen/Qwen2.5-7B-Instruct).")
+            sys.exit(1)
+        return [
+            ModelSpec(
+                id=name,
+                short_name=_filesystem_safe_name(name),
+                provider="OpenAI-compatible",
+            )
+            for name in names
+        ]
+
     roster = get_models_for_provider(provider)
     if names is None:
         return roster
@@ -99,11 +138,19 @@ def resolve_models(names: list[str] | None, provider: str = "openrouter"):
     return models
 
 
-def create_client(provider: str = "openrouter"):
+def create_client(config: EvalConfig):
     """Factory: return the right API client for the chosen provider."""
-    if provider == "inference":
-        return InferenceNetClient()
-    return OpenRouterClient()
+    if config.provider == "inference":
+        return InferenceNetClient(api_key=config.api_key or None)
+    if config.provider == "openai":
+        return OpenAICompatibleClient(
+            base_url=config.base_url or OPENAI_BASE_URL,
+            api_key=config.api_key if config.api_key is not None else (OPENAI_API_KEY or None),
+        )
+    return OpenRouterClient(
+        api_key=config.api_key or None,
+        base_url=config.base_url or OPENROUTER_BASE_URL,
+    )
 
 
 def save_generated_code(code: str, model_name: str, problem_id: str,
@@ -181,6 +228,8 @@ def run_evaluation(config: EvalConfig):
     print(f"ManiBench Evaluation")
     print(f"{'='*60}")
     print(f"Provider:  {config.provider}")
+    if config.provider == "openai" and config.base_url:
+        print(f"Base URL:  {config.base_url}")
     print(f"Models:    {[m.short_name for m in models]}")
     print(f"Problems:  {[p['id'] for p in problems]}")
     print(f"Trials:    {config.trials}")
@@ -190,12 +239,13 @@ def run_evaluation(config: EvalConfig):
     print(f"{'='*60}\n")
 
     # ── Initialize components ──
-    client = create_client(config.provider)
+    client = create_client(config)
     logger = StructuredLogger()
 
     # Log configuration
     logger.log_run_config({
         "provider": config.provider,
+        "base_url": config.base_url,
         "models": [m.short_name for m in models],
         "model_ids": [m.id for m in models],
         "problems": [p["id"] for p in problems],
@@ -310,7 +360,7 @@ def run_evaluation(config: EvalConfig):
                         }
                         print("✗  (empty code)")
 
-                except (OpenRouterError, InferenceNetError) as e:
+                except (OpenRouterError, InferenceNetError, OpenAICompatibleError) as e:
                     record["error"] = str(e)
                     record["metrics"] = {
                         "executability": 0,
@@ -485,16 +535,19 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
   python -m evaluation.run
+  python -m evaluation.run --api-key sk-or-v1-... --models claude-sonnet-4 --trials 1
   python -m evaluation.run --models gpt-4o claude-sonnet-4 --trials 1
   python -m evaluation.run --strategy cot --problems MB-001 MB-002 MB-003
   python -m evaluation.run --skip-render --models deepseek-r1
+  python -m evaluation.run --provider openai --base-url http://localhost:8000/v1 \\
+      --models Qwen/Qwen2.5-Coder-7B-Instruct --problems MB-001 --trials 1
         """,
     )
     parser.add_argument(
         "--models", nargs="+", default=None,
-        help="Model short names (default: all 6). "
-             "Options: gpt-4o, claude-sonnet-4, gemini-2.5-pro, "
-             "deepseek-r1, llama-4-maverick, qwen-2.5-coder",
+        help="Model short names (default: all for openrouter/inference). "
+             "For --provider openai, pass served model id(s) "
+             "(e.g. Qwen/Qwen2.5-Coder-7B-Instruct).",
     )
     parser.add_argument(
         "--problems", nargs="+", default=None,
@@ -524,7 +577,19 @@ Examples:
     parser.add_argument(
         "--provider", type=str, default="openrouter",
         choices=SUPPORTED_PROVIDERS,
-        help="API provider: openrouter (default) or inference (inference.net)",
+        help="API provider: openrouter (default), inference, or openai "
+             "(OpenAI-compatible / vLLM)",
+    )
+    parser.add_argument(
+        "--base-url", type=str, default=None,
+        help="API base URL. For openai: required (or OPENAI_BASE_URL). "
+             "For openrouter: optional override of OPENROUTER_BASE_URL. "
+             "E.g. http://localhost:8000/v1",
+    )
+    parser.add_argument(
+        "--api-key", type=str, default=None,
+        help="API token/key for the chosen provider. Overrides env "
+             "(OPENROUTER_API_KEY / INFERENCE_API_KEY / OPENAI_API_KEY).",
     )
     return parser.parse_args()
 
@@ -533,19 +598,45 @@ def main():
     """Entry point."""
     args = parse_args()
 
-    # Validate API key for the chosen provider
-    if args.provider == "inference":
-        api_key = os.environ.get("INFERENCE_API_KEY", "")
-        if not api_key:
-            print("ERROR: INFERENCE_API_KEY environment variable not set.")
-            print("  export INFERENCE_API_KEY='your-inference-net-key'")
-            sys.exit(1)
+    api_key = args.api_key
+    if args.provider == "openai":
+        base_url = args.base_url or OPENAI_BASE_URL or None
+    elif args.provider == "openrouter":
+        base_url = args.base_url or OPENROUTER_BASE_URL
     else:
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        if not api_key:
-            print("ERROR: OPENROUTER_API_KEY environment variable not set.")
-            print("  export OPENROUTER_API_KEY='sk-or-v1-...'")
+        base_url = args.base_url or None
+
+    # Validate credentials / endpoint for the chosen provider
+    if args.provider == "inference":
+        resolved_key = api_key or INFERENCE_API_KEY or os.environ.get("INFERENCE_API_KEY", "")
+        if not resolved_key:
+            print("ERROR: Inference.net API token not set.")
+            print("  Pass --api-key or export INFERENCE_API_KEY='your-inference-net-key'")
             sys.exit(1)
+        api_key = resolved_key
+    elif args.provider == "openai":
+        if not base_url:
+            print("ERROR: --base-url or OPENAI_BASE_URL is required "
+                  "for --provider openai.")
+            print("  Example: --base-url http://localhost:8000/v1")
+            sys.exit(1)
+        if not args.models:
+            print("ERROR: --models is required for --provider openai.")
+            print("  Pass the served model id(s), e.g. "
+                  "--models Qwen/Qwen2.5-Coder-7B-Instruct")
+            sys.exit(1)
+        resolved_key = api_key if api_key is not None else OPENAI_API_KEY
+        if not resolved_key:
+            print("WARNING: no API key; "
+                  "requests will be unauthenticated (OK for local vLLM).")
+        api_key = resolved_key or None
+    else:
+        resolved_key = api_key or OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY", "")
+        if not resolved_key:
+            print("ERROR: OpenRouter API token not set.")
+            print("  Pass --api-key 'sk-or-v1-...' or export OPENROUTER_API_KEY")
+            sys.exit(1)
+        api_key = resolved_key
 
     config = EvalConfig(
         trials=args.trials,
@@ -556,6 +647,8 @@ def main():
         skip_render=args.skip_render,
         seed=args.seed,
         provider=args.provider,
+        base_url=base_url,
+        api_key=api_key,
     )
 
     run_evaluation(config)

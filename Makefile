@@ -27,6 +27,8 @@ MODELS       ?=
 PROBLEMS     ?=
 SKIP_RENDER  ?=
 PROVIDER     ?= openrouter
+BASE_URL     ?=
+API_KEY      ?=
 
 # Directories
 RESULTS_DIR  := evaluation/results
@@ -44,6 +46,12 @@ ifdef PROBLEMS
 endif
 ifdef SKIP_RENDER
   RUN_FLAGS += --skip-render
+endif
+ifdef BASE_URL
+  RUN_FLAGS += --base-url $(BASE_URL)
+endif
+ifdef API_KEY
+  RUN_FLAGS += --api-key $(API_KEY)
 endif
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -85,6 +93,13 @@ help:
 	@echo "  make inference-list-models     List Inference.net models"
 	@echo "  make run PROVIDER=inference    Use Inference.net with any target"
 	@echo ""
+	@echo "  OPENAI-COMPATIBLE / vLLM"
+	@echo "  ───────────────────────────────────────────────────────────"
+	@echo "  make run-openai                Eval via OpenAI-compatible endpoint"
+	@echo "  make openai-quick-test         Smoke test via OpenAI-compatible API"
+	@echo "  make openai-list-models        List models from OPENAI_BASE_URL"
+	@echo "  make run PROVIDER=openai BASE_URL=http://localhost:8000/v1 MODELS=..."
+	@echo ""
 	@echo "  ANALYSIS"
 	@echo "  ─────────────────────────────────────────────────────────────"
 	@echo "  make analyze        Generate tables from latest results file"
@@ -113,13 +128,17 @@ help:
 	@echo "  MODELS=\"gpt-4o\"     Space-separated model short names"
 	@echo "  PROBLEMS=\"MB-001\"   Space-separated problem IDs"
 	@echo "  SKIP_RENDER=1       Set to skip Manim rendering"
-	@echo "  PROVIDER=openrouter API provider: openrouter | inference"
+	@echo "  PROVIDER=openrouter API provider: openrouter | inference | openai"
+	@echo "  BASE_URL=           OpenAI-compatible / OpenRouter base URL override"
+	@echo "  API_KEY=            API token (overrides .env / env var)"
 	@echo ""
 	@echo "  Examples:"
 	@echo "    make run TRIALS=1 MODELS=\"gpt-4o claude-sonnet-4\""
+	@echo "    make run API_KEY=sk-or-v1-... MODELS=\"claude-sonnet-4\" TRIALS=1"
 	@echo "    make run PROBLEMS=\"MB-001 MB-002 MB-005\" STRATEGY=cot"
 	@echo "  make run-single MODELS=deepseek-r1 PROBLEMS=MB-003"
 	@echo "    make run PROVIDER=inference MODELS=\"Llama-3.3-70B\""
+	@echo "    make run PROVIDER=openai BASE_URL=http://localhost:8000/v1 MODELS=\"Qwen/Qwen2.5-7B-Instruct\""
 	@echo ""
 
 ## Full one-time setup: venv + dependencies + .env
@@ -183,7 +202,7 @@ check-key:
 	fi; \
 	if [ -z "$$OPENROUTER_API_KEY" ]; then \
 		echo "  ⚠  OPENROUTER_API_KEY not set."; \
-		echo "     → Edit .env or: export OPENROUTER_API_KEY='sk-or-v1-...'"; \
+		echo "     → Edit .env, export OPENROUTER_API_KEY='sk-or-v1-...', or pass --api-key / API_KEY="; \
 	else \
 		echo "  ✓ OPENROUTER_API_KEY is set ($${OPENROUTER_API_KEY:0:12}...)"; \
 	fi; \
@@ -319,6 +338,75 @@ inference-run-all-strategies:
 	done
 	@echo ""
 	@echo "✅  All Inference.net strategies complete. Run 'make analyze-all' for combined report."
+
+
+# ── OpenAI-compatible / vLLM targets ──────────────────────────────────────
+
+.PHONY: run-openai openai-quick-test openai-list-models
+
+## Evaluation via OpenAI-compatible endpoint (requires BASE_URL + MODELS)
+run-openai:
+	@if [ -z "$(BASE_URL)" ] && [ -z "$$OPENAI_BASE_URL" ]; then \
+		echo "ERROR: set BASE_URL=http://host:port/v1 or OPENAI_BASE_URL in .env"; \
+		exit 1; \
+	fi
+	@if [ -z "$(MODELS)" ]; then \
+		echo "ERROR: set MODELS to the served model id(s)"; \
+		echo "  Example: make run-openai BASE_URL=http://localhost:8000/v1 MODELS=\"Qwen/Qwen2.5-7B-Instruct\""; \
+		exit 1; \
+	fi
+	@echo "════════════════════════════════════════════════════════"
+	@echo "  ManiBench Evaluation — OpenAI-compatible / vLLM"
+	@echo "  Base URL: $(or $(BASE_URL),$${OPENAI_BASE_URL})"
+	@echo "  Models:   $(MODELS)"
+	@echo "  Strategy: $(STRATEGY) | Trials: $(TRIALS)"
+	@echo "════════════════════════════════════════════════════════"
+	$(PY) -m evaluation.run --provider openai \
+		$(if $(BASE_URL),--base-url $(BASE_URL),) \
+		--models $(MODELS) \
+		$(if $(PROBLEMS),--problems $(PROBLEMS),) \
+		--trials $(TRIALS) --strategy $(STRATEGY) --timeout $(TIMEOUT) --seed $(SEED) \
+		$(if $(SKIP_RENDER),--skip-render,)
+
+## Smoke test via OpenAI-compatible API (1 problem, 1 trial, skip render)
+openai-quick-test:
+	@if [ -z "$(BASE_URL)" ] && [ -z "$$OPENAI_BASE_URL" ]; then \
+		echo "ERROR: set BASE_URL=http://host:port/v1 or OPENAI_BASE_URL in .env"; \
+		exit 1; \
+	fi
+	@if [ -z "$(MODELS)" ]; then \
+		echo "ERROR: set MODELS to the served model id"; \
+		exit 1; \
+	fi
+	@echo "════════════════════════════════════════════════════════"
+	@echo "  ManiBench Quick Test — OpenAI-compatible / vLLM"
+	@echo "════════════════════════════════════════════════════════"
+	$(PY) -m evaluation.run \
+		--provider openai \
+		$(if $(BASE_URL),--base-url $(BASE_URL),) \
+		--models $(MODELS) \
+		--problems $(or $(PROBLEMS),MB-005) \
+		--trials 1 \
+		--skip-render
+
+## List models from an OpenAI-compatible /models endpoint
+openai-list-models:
+	@BASE_URL="$(BASE_URL)" $(PY) -c "$$OPENAI_LIST_MODELS_SCRIPT"
+
+define OPENAI_LIST_MODELS_SCRIPT
+import os
+from evaluation.openai_client import OpenAICompatibleClient
+from evaluation.config import OPENAI_BASE_URL
+base = os.environ.get("BASE_URL") or OPENAI_BASE_URL
+if not base:
+    raise SystemExit("Set OPENAI_BASE_URL in .env or: make openai-list-models BASE_URL=http://localhost:8000/v1")
+client = OpenAICompatibleClient(base_url=base)
+models = client.list_models()
+print(f"Found {len(models)} model(s) at {base}:\n")
+for m in models:
+    print(f"  {m.get('id', m)}")
+endef
+export OPENAI_LIST_MODELS_SCRIPT
 
 
 # ══════════════════════════════════════════════════════════════════════════

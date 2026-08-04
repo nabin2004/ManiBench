@@ -79,6 +79,7 @@ ManiBench/
 │   ├── run.py                          ← Main CLI: generation + metrics loop
 │   ├── config.py                       ← Models, paths, GL patterns
 │   ├── openrouter_client.py            ← OpenRouter API client
+│   ├── openai_client.py                ← OpenAI-compatible / vLLM client
 │   ├── prompts.py                      ← 5 prompt strategy builders
 │   ├── analysis.py                     ← LaTeX/CSV/Markdown generators
 │   ├── logger.py                       ← Structured JSONL logging
@@ -406,7 +407,9 @@ manim -ql evaluation/generated_code/GPT-4o/zero_shot/MB-005_trial1.py
 
 ## Adding New Models
 
-Edit `evaluation/config.py` → `DEFAULT_MODELS`:
+### OpenRouter / Inference.net
+
+Edit `evaluation/config.py` → `DEFAULT_MODELS` (or `INFERENCE_MODELS`):
 
 ```python
 DEFAULT_MODELS.append(
@@ -422,11 +425,32 @@ DEFAULT_MODELS.append(
 
 Find model IDs at [openrouter.ai/models](https://openrouter.ai/models) or via `make list-models`.
 
+### OpenAI-compatible / vLLM
+
+No roster edit needed. Point at any OpenAI-compatible chat completions server:
+
+```bash
+# Via CLI
+python -m evaluation.run --provider openai \
+  --base-url http://localhost:8000/v1 \
+  --models Qwen/Qwen2.5-Coder-7B-Instruct \
+  --problems MB-001 --trials 1
+
+# Via Makefile
+make run-openai BASE_URL=http://localhost:8000/v1 \
+  MODELS="Qwen/Qwen2.5-Coder-7B-Instruct" PROBLEMS=MB-001 TRIALS=1
+
+# Or set OPENAI_BASE_URL in .env, then:
+make run PROVIDER=openai MODELS="my-served-model" TRIALS=1
+```
+
+`--models` values are the served model IDs (as reported by `/v1/models`). `OPENAI_API_KEY` is optional for local unauthenticated servers. List remote models with `make openai-list-models` (requires `OPENAI_BASE_URL` or `BASE_URL`).
+
 ---
 
 ## Troubleshooting
 
-### "OPENROUTER_API_KEY not set"
+### "OPENROUTER_API_KEY not set" / OpenRouter token
 
 ```bash
 # Option 1: environment variable
@@ -434,6 +458,9 @@ export OPENROUTER_API_KEY='sk-or-v1-your-key'
 
 # Option 2: .env file
 echo "OPENROUTER_API_KEY=sk-or-v1-your-key" > .env
+
+# Option 3: pass the token on the CLI (overrides env)
+python -m evaluation.run --api-key sk-or-v1-your-key --models claude-sonnet-4 --trials 1
 
 # Then verify
 make check-env

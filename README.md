@@ -91,7 +91,9 @@ This benchmark addresses two critical failure modes in LLM-generated code:
    - `evaluation/run.py` — Main CLI runner
    - `evaluation/config.py` — Models, paths, GL detection patterns
    - `evaluation/openrouter_client.py` — OpenRouter API client with retries
+   - `evaluation/openai_client.py` — OpenAI-compatible / vLLM client
    - `evaluation/prompts.py` — 5 prompt strategy builders
+
    - `evaluation/metrics/` — Executability, Version-Conflict, Alignment, Coverage
    - `evaluation/analysis.py` — LaTeX/CSV/Markdown report generator
    - `evaluation/logger.py` — Structured experiment logging
@@ -233,7 +235,7 @@ cd ManiBench
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Set your OpenRouter API key
+# 3. Set your OpenRouter API token (or pass --api-key on each run)
 export OPENROUTER_API_KEY='sk-or-v1-your-key-here'
 
 # 4. Run evaluation (all models × all problems × 3 trials)
@@ -242,13 +244,22 @@ python -m evaluation.run
 # 5. Quick test (single model, single problem, 1 trial)
 python -m evaluation.run --models gpt-4o --problems MB-005 --trials 1
 
+#    Or pass the OpenRouter token on the CLI instead of env:
+python -m evaluation.run --api-key sk-or-v1-... --models claude-sonnet-4 --trials 1
+
 # 6. Use a specific prompt strategy
 python -m evaluation.run --strategy cot --models claude-sonnet-4
 
 # 7. Skip Manim rendering (static analysis only — faster)
 python -m evaluation.run --skip-render
 
-# 8. Generate paper tables from results
+# 8. OpenAI-compatible / vLLM endpoint (any served model id)
+python -m evaluation.run --provider openai \
+  --base-url http://localhost:8000/v1 \
+  --models Qwen/Qwen2.5-Coder-7B-Instruct \
+  --problems MB-001 --trials 1
+
+# 9. Generate paper tables from results
 python -m evaluation.analysis --results results/results_<run_id>.json
 ```
 
@@ -262,6 +273,8 @@ python -m evaluation.analysis --results results/results_<run_id>.json
 | `deepseek-r1` | `deepseek/deepseek-r1` | DeepSeek |
 | `llama-4-maverick` | `meta-llama/llama-4-maverick` | Meta |
 | `qwen-2.5-coder` | `qwen/qwen-2.5-coder-32b-instruct` | Alibaba |
+
+For local or self-hosted models, use `--provider openai` with `--base-url` pointing at any OpenAI-compatible server (vLLM, LM Studio, etc.). Pass the served model id(s) via `--models` — no roster edit required. `OPENAI_API_KEY` is optional for unauthenticated local servers.
 
 #### Prompt Strategies
 
