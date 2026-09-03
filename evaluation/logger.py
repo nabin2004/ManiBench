@@ -117,6 +117,32 @@ class StructuredLogger:
             **metrics,
         })
 
+    def log_render(self, model: str, problem_id: str, trial: int,
+                   exec_detail: dict[str, Any]):
+        """Log Manim subprocess output for one (model, problem, trial)."""
+        attempted = exec_detail.get("render_attempted", False)
+        duration = exec_detail.get("render_duration_s", 0.0)
+        rc = exec_detail.get("returncode")
+        error = exec_detail.get("error_type") or "-"
+        self.info(
+            f"    render={'attempted' if attempted else 'skipped'} "
+            f"duration={duration}s rc={rc} error={error}"
+        )
+        self._write("RENDER", f"{model}/{problem_id}/t{trial}", {
+            "model": model,
+            "problem_id": problem_id,
+            "trial": trial,
+            "render_attempted": attempted,
+            "render_success": exec_detail.get("render_success", False),
+            "render_duration_s": duration,
+            "returncode": rc,
+            "error_type": exec_detail.get("error_type"),
+            "error_message": exec_detail.get("error_message"),
+            "command": exec_detail.get("command", []),
+            "stdout": exec_detail.get("stdout", ""),
+            "stderr": exec_detail.get("stderr", ""),
+        })
+
     def log_run_config(self, config: dict[str, Any]):
         """Log the full evaluation configuration at run start."""
         self._write("CONFIG", "run_config", config)

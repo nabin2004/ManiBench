@@ -1,0 +1,50 @@
+[
+  {
+    "slug": "manibench-mb-001-colliding-blocks-compute-pi",
+    "file": "tasks\\mb_001_colliding_blocks_compute_pi.py"
+  },
+  {
+    "slug": "manibench-mb-002-gradient-descent-how-neural-networks-learn",
+    "file": "tasks\\mb_002_gradient_descent_how_neural_networks_learn.py"
+  },
+  {
+    "slug": "manibench-mb-003-but-what-is-a-convolution",
+    "file": "tasks\\mb_003_but_what_is_a_convolution.py"
+  },
+  {
+    "slug": "manibench-mb-004-eigenvectors-eigenvalues-chapter-14",
+    "file": "tasks\\mb_004_eigenvectors_eigenvalues_chapter_14.py"
+  },
+  {
+    "slug": "manibench-mb-005-the-determinant-chapter-6",
+    "file": "tasks\\mb_005_the_determinant_chapter_6.py"
+  },
+  {
+    "slug": "manibench-mb-006-but-what-is-the-central-limit-theorem",
+    "file": "tasks\\mb_006_but_what_is_the_central_limit_theorem.py"
+  },
+  {
+    "slug": "manibench-mb-007-the-medical-test-paradox",
+    "file": "tasks\\mb_007_the_medical_test_paradox.py"
+  },
+  {
+    "slug": "manibench-mb-008-visualizing-the-chain-rule",
+    "file": "tasks\\mb_008_visualizing_the_chain_rule.py"
+  },
+  {
+    "slug": "manibench-mb-009-integration-and-the-fundamental-theorem-of-calculus",
+    "file": "tasks\\mb_009_integration_and_the_fundamental_theorem_of_calculus.py"
+  },
+  {
+    "slug": "manibench-mb-010-taylor-series",
+    "file": "tasks\\mb_010_taylor_series.py"
+  },
+  {
+    "slug": "manibench-mb-011-the-hairy-ball-theorem",
+    "file": "tasks\\mb_011_the_hairy_ball_theorem.py"
+  },
+  {
+    "slug": "manibench-mb-012-the-unexpectedly-hard-windmill-problem",
+    "file": "tasks\\mb_012_the_unexpectedly_hard_windmill_problem.py"
+  }
+]

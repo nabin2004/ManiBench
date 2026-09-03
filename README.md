@@ -72,7 +72,12 @@ This benchmark addresses two critical failure modes in LLM-generated code:
    - Prompt templates by problem difficulty
    - **Use this to improve LLM code quality**
 
-6. **README.md** (this file)
+6. **KAGGLE_BENCHMARKS_GUIDE.md**
+   - Step-by-step instructions for running ManiBench on Kaggle Benchmarks
+   - Initializing environment, pushing tasks, running benchmarks against models, fetching logs, downloading results, and publishing tasks
+   - **Use this to run ManiBench on Kaggle Benchmarks**
+
+7. **README.md** (this file)
    - Overview and file guide
    - Citation information
    - Links and resources
@@ -446,3 +451,8 @@ Key works used in ManiBench:
 **Last Updated**: 2026-02-18  
 **Schema Version**: 2.0  
 **Status**: Pilot dataset complete with full reference code analysis and automated evaluation framework. Ready for paper evaluation.
+
+
+```Python
+uv run python -m evaluation.run --provider openai --base-url https://nabinoli2004--aosqwen-server.us-east.modal.direct/v1 --models aos-qwen2.5-coder-7b-manim
+```

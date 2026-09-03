@@ -45,7 +45,10 @@ Includes worked examples, disagreement resolution, and scoring procedures.
 
 **Use this** when evaluating generated animations.
 
-### 4. **ManiBench_QuickStart.md** (this file)
+### 4. **KAGGLE_BENCHMARKS_GUIDE.md**
+Comprehensive setup and execution guide for running ManiBench tasks on Kaggle Benchmarks using `kaggle-benchmarks` Python SDK and `kaggle` CLI.
+
+### 5. **ManiBench_QuickStart.md** (this file)
 Quick reference and workflow guide.
 
 ---

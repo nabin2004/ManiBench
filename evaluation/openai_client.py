@@ -106,10 +106,15 @@ class OpenAICompatibleClient:
                     )
                 latency_ms = (time.monotonic() - t0) * 1000
 
-                if resp.status_code == 429:
+                if resp.status_code in (429, 502, 503):
                     wait = RETRY_DELAY * attempt
-                    time.sleep(wait)
-                    continue
+                    last_error = OpenAICompatibleError(
+                        f"HTTP {resp.status_code}: {resp.text[:500]}"
+                    )
+                    if attempt < MAX_RETRIES:
+                        time.sleep(wait)
+                        continue
+                    raise last_error
 
                 if resp.status_code != 200:
                     error_body = resp.text[:500]

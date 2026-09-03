@@ -77,7 +77,7 @@ def load_dataset(path: str | Path) -> list[dict]:
         print(f"ERROR: Dataset not found at {path}")
         sys.exit(1)
 
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     problems = data.get("problems", [])
@@ -236,7 +236,19 @@ def run_evaluation(config: EvalConfig):
     print(f"Strategy:  {config.prompt_strategy}")
     print(f"Total API calls: {total_calls}")
     print(f"Skip render: {config.skip_render}")
+    print(f"Manim timeout: {config.manim_timeout}s")
     print(f"{'='*60}\n")
+
+    if not config.skip_render:
+        try:
+            import manim  # noqa: F401
+            print(f"Manim preflight: OK ({manim.__version__})")
+        except ImportError as e:
+            print("ERROR: Manim is not importable in this interpreter.")
+            print("  Executability requires a real render when --skip-render is not set.")
+            print("  Install with: uv pip install -r requirements.txt")
+            print(f"  Details: {e}")
+            sys.exit(1)
 
     # ── Initialize components ──
     client = create_client(config)
@@ -335,21 +347,32 @@ def run_evaluation(config: EvalConfig):
                             k: v for k, v in metrics.items() if k != "_scores"
                         }
 
-                        # Log metrics
+                        # Log metrics + Manim subprocess output
                         logger.log_metrics(
                             model=model.short_name,
                             problem_id=pid,
                             trial=trial,
                             metrics=metrics["_scores"],
                         )
+                        exec_detail = metrics.get("executability", {})
+                        logger.log_render(
+                            model=model.short_name,
+                            problem_id=pid,
+                            trial=trial,
+                            exec_detail=exec_detail,
+                        )
 
                         scores = metrics["_scores"]
                         exec_sym = "✓" if scores["executability"] == 1 else "✗"
+                        dur = exec_detail.get("render_duration_s", 0.0)
+                        rc = exec_detail.get("returncode")
+                        err = exec_detail.get("error_type") or "-"
                         print(f"{exec_sym}  exec={scores['executability']} "
                               f"vc={scores['version_conflict_rate']:.3f} "
                               f"align={scores['alignment_score']:.3f} "
                               f"cov={scores['coverage_score']:.3f} "
-                              f"({gen_time:.1f}s)")
+                              f"render={dur}s rc={rc} error={err} "
+                              f"({gen_time:.1f}s gen)")
                     else:
                         record["error"] = "empty_code"
                         record["metrics"] = {
@@ -390,7 +413,7 @@ def run_evaluation(config: EvalConfig):
     # Save raw results
     results_path = RESULTS_DIR / f"results_{logger.run_id}.json"
     results_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(results_path, "w") as f:
+    with open(results_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2, default=str)
     print(f"Raw results saved: {results_path}")
 
