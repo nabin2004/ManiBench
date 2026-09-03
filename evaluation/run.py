@@ -67,6 +67,7 @@ from evaluation.metrics import (
     detect_specific_conflicts,
     compute_alignment,
     compute_coverage,
+    compute_visual_similarity,
 )
 
 
@@ -588,6 +589,10 @@ Examples:
     parser.add_argument(
         "--skip-render", action="store_true",
         help="Skip Manim rendering (syntax + static analysis only)",
+    )
+    parser.add_argument(
+        "--enable-vision", action="store_true",
+        help="Enable DINOv2 + DTW visual embedding similarity evaluation against reference video",
     )
     parser.add_argument(
         "--timeout", type=int, default=60,

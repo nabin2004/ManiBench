@@ -1,0 +1,10 @@
+# Visual Embedding Similarity Dependencies for ManiBench
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+opencv-python>=4.8.0
+yt-dlp>=2024.0.0
+dtaidistance>=2.3.0
+scipy>=1.10.0
+pillow>=10.0.0
+matplotlib>=3.7.0

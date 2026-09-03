@@ -12,6 +12,7 @@ from evaluation.metrics.executability import compute_executability
 from evaluation.metrics.version_conflict import detect_version_conflicts, detect_specific_conflicts
 from evaluation.metrics.alignment import compute_alignment
 from evaluation.metrics.coverage import compute_coverage
+from evaluation.metrics.visual_similarity import compute_visual_similarity
 
 __all__ = [
     "compute_executability",
@@ -19,4 +20,5 @@ __all__ = [
     "detect_specific_conflicts",
     "compute_alignment",
     "compute_coverage",
+    "compute_visual_similarity",
 ]
