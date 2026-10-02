@@ -124,6 +124,9 @@ def _agg_scores(records: list[dict]) -> dict:
     vc_vals = [s["version_conflict_rate"] for s in scores]
     align_vals = [s["alignment_score"] for s in scores]
     cov_vals = [s["coverage_score"] for s in scores]
+    mas_vals = [s.get("mas_score", 0.0) for s in scores]
+    cmi_vals = [s.get("cmi_score", 0.0) for s in scores]
+    car_vals = [s.get("car_score", 0.0) for s in scores]
 
     def mean(vs):
         return sum(vs) / len(vs)
@@ -131,17 +134,43 @@ def _agg_scores(records: list[dict]) -> dict:
     def std(vs):
         m = mean(vs)
         return (sum((v - m) ** 2 for v in vs) / len(vs)) ** 0.5
+        
+    # Pass@3 calculation (prob of at least 1 pass in 3 trials)
+    # Group trials by problem for Pass@k
+    from collections import defaultdict
+    prob_execs = defaultdict(list)
+    for r in records:
+        if "metrics" in r and "problem_id" in r:
+            prob_execs[r["problem_id"]].append(r["metrics"]["executability"])
+            
+    pass_at_k_probs = []
+    k = 3
+    for p_id, p_execs in prob_execs.items():
+        if len(p_execs) > 0:
+            # Empirical probability of passing a single trial for this problem
+            p = sum(p_execs) / len(p_execs)
+            # Pass@k = 1 - (1 - p)^k
+            pass_at_k_probs.append(1.0 - (1.0 - p)**k)
+            
+    pass_at_3_mean = mean(pass_at_k_probs) if pass_at_k_probs else 0.0
 
     return {
         "n": n,
         "exec_mean": round(mean(exec_vals), 4),
         "exec_std": round(std(exec_vals), 4),
+        "pass_at_3": round(pass_at_3_mean, 4),
         "vc_mean": round(mean(vc_vals), 4),
         "vc_std": round(std(vc_vals), 4),
         "align_mean": round(mean(align_vals), 4),
         "align_std": round(std(align_vals), 4),
         "cov_mean": round(mean(cov_vals), 4),
         "cov_std": round(std(cov_vals), 4),
+        "mas_mean": round(mean(mas_vals), 4),
+        "mas_std": round(std(mas_vals), 4),
+        "cmi_mean": round(mean(cmi_vals), 4),
+        "cmi_std": round(std(cmi_vals), 4),
+        "car_mean": round(mean(car_vals), 4),
+        "car_std": round(std(car_vals), 4),
     }
 
 
@@ -159,9 +188,9 @@ def generate_latex_model_table(agg: dict) -> str:
         r"\centering",
         r"\caption{Overall model performance on ManiBench (mean $\pm$ std, $n=" + str(agg["global"]["n"]) + r"$ total samples).}",
         r"\label{tab:model_performance}",
-        r"\begin{tabular}{lcccc}",
+        r"\begin{tabular}{lcccccccc}",
         r"\toprule",
-        r"\textbf{Model} & \textbf{Exec.} $\uparrow$ & \textbf{VC-Rate} $\downarrow$ & \textbf{Align.} $\uparrow$ & \textbf{Cover.} $\uparrow$ \\",
+        r"\textbf{Model} & \textbf{Pass@1} $\uparrow$ & \textbf{Pass@3} $\uparrow$ & \textbf{VC-Rate} $\downarrow$ & \textbf{Align.} $\uparrow$ & \textbf{Cover.} $\uparrow$ & \textbf{MAS} $\uparrow$ & \textbf{CMI} $\uparrow$ & \textbf{CAR} $\uparrow$ \\",
         r"\midrule",
     ]
 
@@ -170,9 +199,13 @@ def generate_latex_model_table(agg: dict) -> str:
         lines.append(
             f"  {_latex_escape(model)} & "
             f"${s['exec_mean']:.3f} \\pm {s['exec_std']:.3f}$ & "
-            f"${s['vc_mean']:.4f} \\pm {s['vc_std']:.4f}$ & "
+            f"${s['pass_at_3']:.3f}$ & "
+            f"${s['vc_mean']:.3f} \\pm {s['vc_std']:.3f}$ & "
             f"${s['align_mean']:.3f} \\pm {s['align_std']:.3f}$ & "
-            f"${s['cov_mean']:.3f} \\pm {s['cov_std']:.3f}$ \\\\"
+            f"${s['cov_mean']:.3f} \\pm {s['cov_std']:.3f}$ & "
+            f"${s['mas_mean']:.3f} \\pm {s['mas_std']:.3f}$ & "
+            f"${s['cmi_mean']:.3f} \\pm {s['cmi_std']:.3f}$ & "
+            f"${s['car_mean']:.3f} \\pm {s['car_std']:.3f}$ \\\\"
         )
 
     g = agg["global"]
@@ -180,9 +213,13 @@ def generate_latex_model_table(agg: dict) -> str:
         r"\midrule",
         f"  \\textbf{{Overall}} & "
         f"${g['exec_mean']:.3f} \\pm {g['exec_std']:.3f}$ & "
-        f"${g['vc_mean']:.4f} \\pm {g['vc_std']:.4f}$ & "
+        f"${g['pass_at_3']:.3f}$ & "
+        f"${g['vc_mean']:.3f} \\pm {g['vc_std']:.3f}$ & "
         f"${g['align_mean']:.3f} \\pm {g['align_std']:.3f}$ & "
-        f"${g['cov_mean']:.3f} \\pm {g['cov_std']:.3f}$ \\\\",
+        f"${g['cov_mean']:.3f} \\pm {g['cov_std']:.3f}$ & "
+        f"${g['mas_mean']:.3f} \\pm {g['mas_std']:.3f}$ & "
+        f"${g['cmi_mean']:.3f} \\pm {g['cmi_std']:.3f}$ & "
+        f"${g['car_mean']:.3f} \\pm {g['car_std']:.3f}$ \\\\",
         r"\bottomrule",
         r"\end{tabular}",
         r"\end{table}",

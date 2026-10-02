@@ -68,6 +68,9 @@ from evaluation.metrics import (
     compute_alignment,
     compute_coverage,
     compute_visual_similarity,
+    compute_mathematical_fidelity,
+    compute_code_quality,
+    compute_constraint_adherence,
 )
 
 
@@ -198,6 +201,17 @@ def compute_all_metrics(
     coverage_reqs = problem.get("coverage_requirements", [])
     cov_result = compute_coverage(code, coverage_reqs)
 
+    # 5. Mathematical Fidelity
+    gt_eqs = problem.get("ground_truth_equations", [])
+    math_result = compute_mathematical_fidelity(code, gt_eqs)
+
+    # 6. Code Quality
+    quality_result = compute_code_quality(code)
+
+    # 7. Constraint Adherence (rule-based for speed inside compute_all_metrics, 
+    # LLM-as-a-judge can be run later as a separate pass if needed)
+    constraint_result = compute_constraint_adherence(code, problem, use_llm_judge=False)
+
     return {
         "executability": exec_result,
         "version_conflict": {
@@ -206,12 +220,18 @@ def compute_all_metrics(
         },
         "alignment": align_result,
         "coverage": cov_result,
+        "mathematical_fidelity": math_result,
+        "code_quality": quality_result,
+        "constraint_adherence": constraint_result,
         # Summary scalars (for quick aggregation)
         "_scores": {
             "executability": exec_result.get("executability", 0),
             "version_conflict_rate": vc_result.get("version_conflict_rate", 1.0),
             "alignment_score": align_result.get("alignment_score", 0.0),
             "coverage_score": cov_result.get("coverage_score", 0.0),
+            "mas_score": math_result.get("mas_score", 0.0),
+            "cmi_score": quality_result.get("cmi_score", 0.0),
+            "car_score": constraint_result.get("car_score", 0.0),
         },
     }
 
