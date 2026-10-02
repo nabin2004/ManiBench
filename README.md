@@ -72,12 +72,17 @@ This benchmark addresses two critical failure modes in LLM-generated code:
    - Prompt templates by problem difficulty
    - **Use this to improve LLM code quality**
 
-6. **KAGGLE_BENCHMARKS_GUIDE.md**
-   - Step-by-step instructions for running ManiBench on Kaggle Benchmarks
-   - Initializing environment, pushing tasks, running benchmarks against models, fetching logs, downloading results, and publishing tasks
-   - **Use this to run ManiBench on Kaggle Benchmarks**
+6. **KAGGLE_T4x2_BENCHMARK_GUIDE.md** & **ManiBench_Kaggle_T4x2_Benchmark.ipynb**
+   - Complete guide and turnkey Jupyter notebook for running ManiBench on **Kaggle GPU Dual Tesla T4 (2×16GB VRAM)**.
+   - Evaluates all 28 Manim models by `nabin2004` (Qwen-Manimator, AOS-Qwen3, AOS-Qwen2.5, AOS-Gemma4, and Baselines).
+   - Exports paper-ready LaTeX tables (`booktabs`), Markdown leaderboards, CSVs, and vector figures.
+   - **Start here to benchmark open-weights models on Kaggle GPUs**
 
-7. **README.md** (this file)
+7. **KAGGLE_BENCHMARKS_GUIDE.md**
+   - Step-by-step instructions for running closed-source/hosted LLMs via the `kaggle-benchmarks` SDK (`kbench`).
+   - Initializing environment, pushing tasks, running benchmarks against models, fetching logs, downloading results, and publishing tasks.
+
+8. **README.md** (this file)
    - Overview and file guide
    - Citation information
    - Links and resources

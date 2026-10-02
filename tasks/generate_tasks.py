@@ -3,7 +3,13 @@
 Generate Kaggle Benchmarks Task Files for ManiBench
 ====================================================
 Reads ManiBench_Pilot_Dataset.json and outputs self-contained Jupytext percent format
-task files for each problem into tasks/.
+task files for each problem into tasks/. Evaluates all metrics from
+ManiBench_Evaluation_Rubric.md:
+  1. Executability (Binary: 0 or 1)
+  2. Version-Conflict Error Rate (VCER: 0.0 - 1.0)
+  3. Alignment Score (0.0 - 1.0)
+  4. Coverage Score (0.0 - 1.0)
+  5. Visual Similarity (DINOv2 + DTW: 0.0 - 1.0, with Graceful Fallback)
 """
 
 import json
@@ -15,90 +21,6 @@ ROOT_DIR = Path(__file__).parent.parent
 DATASET_PATH = ROOT_DIR / "ManiBench_Pilot_Dataset.json"
 TASKS_DIR = ROOT_DIR / "tasks"
 
-HELPER_CODE = '''import ast
-import re
-from typing import Any
-
-GL_ONLY_PATTERNS = [
-    r"from\\s+manim_imports_ext\\s+import",
-    r"from\\s+manimlib\\s+import",
-    r"import\\s+manimlib",
-    r"ShowCreation\\(",
-    r"ShowCreationThenDestruction\\(",
-    r"ShowCreationThenFadeOut\\(",
-    r"ApplyMethod\\(",
-    r"TexMobject\\(",
-    r"TextMobject\\(",
-    r"CONFIG\\s*=\\s*\\{",
-    r"self\\.add_sound\\(",
-    r"get_piecewise_linear_function\\(",
-    r"get_graph\\(",
-    r"VGroup\\.\\*\\(",
-]
-
-def extract_python_code(response_text: str) -> str:
-    match = re.search(r"```python\\s*(.*?)\\s*```", response_text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    match = re.search(r"```\\s*(.*?)\\s*```", response_text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return response_text.strip()
-
-def evaluate_manibench_code(code: str) -> dict[str, Any]:
-    syntax_valid = True
-    syntax_error = None
-    try:
-        ast.parse(code)
-    except SyntaxError as e:
-        syntax_valid = False
-        syntax_error = str(e)
-
-    has_scene = False
-    scene_names = []
-    if syntax_valid:
-        try:
-            tree = ast.parse(code)
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ClassDef):
-                    for base in node.bases:
-                        bname = base.id if isinstance(base, ast.Name) else (base.attr if isinstance(base, ast.Attribute) else "")
-                        if bname in ("Scene", "MovingCameraScene", "ThreeDScene", "ZoomedScene", "VectorScene"):
-                            has_scene = True
-                            scene_names.append(node.name)
-        except SyntaxError:
-            pass
-
-    has_manim = bool(re.search(r"from\\s+manim\\s+import|import\\s+manim", code))
-    has_gl = bool(re.search(r"from\\s+manim_imports_ext|from\\s+manimlib|from\\s+manim_gl|import\\s+manimlib", code))
-    is_ce_compliant = has_manim and not has_gl
-
-    conflicts = []
-    lines = code.split("\\n")
-    for pattern_str in GL_ONLY_PATTERNS:
-        pattern = re.compile(pattern_str, re.MULTILINE)
-        for i, line in enumerate(lines, 1):
-            if pattern.search(line):
-                conflicts.append(pattern_str)
-
-    syntax_score = 1.0 if syntax_valid else 0.0
-    scene_score = 1.0 if has_scene else 0.0
-    import_score = 1.0 if is_ce_compliant else (0.5 if has_manim else 0.0)
-    conflict_score = 1.0 if len(conflicts) == 0 else max(0.0, 1.0 - (len(conflicts) * 0.2))
-
-    composite_score = (syntax_score * 0.35) + (scene_score * 0.25) + (import_score * 0.20) + (conflict_score * 0.20)
-
-    return {
-        "composite_score": round(composite_score, 4),
-        "syntax_valid": syntax_valid,
-        "syntax_error": syntax_error,
-        "has_scene": has_scene,
-        "scene_names": scene_names,
-        "is_ce_compliant": is_ce_compliant,
-        "conflicts_found": len(conflicts),
-    }
-'''
-
 SYSTEM_PROMPT = """You are an expert Manim CE (Community Edition) developer.
 Write complete, executable Python code using Manim CE to animate the requested mathematical concept.
 Ensure:
@@ -106,6 +28,21 @@ Ensure:
 2. Define a subclass of `Scene` (or MovingCameraScene/ThreeDScene).
 3. Enclose code in ```python ... ``` blocks.
 """
+
+SLUG_OVERRIDES = {
+    "MB-001": "manibench-mb-001-colliding-blocks-compute-pi",
+    "MB-002": "manibench-mb-002-gradient-descent-how-neural-networks-learn",
+    "MB-003": "manibench-mb-003-but-what-is-a-convolution",
+    "MB-004": "manibench-mb-004-eigenvectors-eigenvalues-chapter-14",
+    "MB-005": "manibench-mb-005-the-determinant-chapter-6",
+    "MB-006": "manibench-006-central-limit-theorem",
+    "MB-007": "manibench-007-the-medical-test-paradox",
+    "MB-008": "manibench-008-visualizing-the-chain-rule",
+    "MB-009": "manibench-009-integration-and-ftc",
+    "MB-010": "manibench-010-taylor-series",
+    "MB-011": "manibench-011-the-hairy-ball-theorem",
+    "MB-012": "manibench-mb-012-the-unexpectedly-hard-windmill-problem",
+}
 
 def slugify(text: str) -> str:
     text = text.lower().replace("π", "pi")
@@ -116,6 +53,12 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     TASKS_DIR.mkdir(exist_ok=True)
+
+    # Read helper code directly from manibench_eval_core.py to ensure 100% consistency
+    core_path = TASKS_DIR / "manibench_eval_core.py"
+    with open(core_path, "r", encoding="utf-8") as cf:
+        helper_code = cf.read()
+
     with open(DATASET_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -125,41 +68,94 @@ def main():
     task_list = []
 
     for prob in problems:
-        prob_id = prob["id"].lower().replace("_", "-")
+        prob_id = prob["id"]
+        prob_id_clean = prob_id.lower().replace("_", "-")
         title_slug = slugify(prob["title"])
-        task_slug = f"manibench-{prob_id}-{title_slug}"
-        filename = f"{prob_id.replace('-', '_')}_{title_slug.replace('-', '_')}.py"
+        task_slug = SLUG_OVERRIDES.get(prob_id, f"manibench-{prob_id_clean}-{title_slug}")
+
+        filename = f"{prob_id_clean.replace('-', '_')}_{title_slug.replace('-', '_')}.py"
         filepath = TASKS_DIR / filename
-        func_name = f"run_{prob_id.replace('-', '_')}"
+        func_name = f"run_{prob_id_clean.replace('-', '_')}"
 
         prompt_escaped = prob["full_prompt"].replace('"""', '\\"\\"\\"')
+
+        req_visual_events = repr(prob.get("required_visual_events", []))
+        known_incompatibilities = repr(prob.get("version_conflict_notes", {}).get("known_incompatibilities", []))
+        cov_requirements = repr(prob.get("coverage_requirements", []))
 
         code_content = f'''# %%
 import kaggle_benchmarks as kbench
 
 # %%
-{HELPER_CODE}
+{helper_code}
 
 # %%
 SYSTEM_PROMPT = """{SYSTEM_PROMPT.strip()}"""
 
-PROMPT_{prob_id.replace('-', '_').upper()} = """{prompt_escaped.strip()}"""
+PROMPT_{prob_id_clean.replace('-', '_').upper()} = """{prompt_escaped.strip()}"""
+
+REQUIRED_VISUAL_EVENTS_{prob_id_clean.replace('-', '_').upper()} = {req_visual_events}
+
+KNOWN_INCOMPATIBILITIES_{prob_id_clean.replace('-', '_').upper()} = {known_incompatibilities}
+
+COVERAGE_REQUIREMENTS_{prob_id_clean.replace('-', '_').upper()} = {cov_requirements}
 
 # %%
 @kbench.task(name="{task_slug}")
-def {func_name}(llm) -> float:
+def {func_name}(llm) -> dict:
     """ManiBench Problem {prob['id']}: {prob['title']}"""
-    full_prompt = f"{{SYSTEM_PROMPT}}\\n\\nProblem: {prob['title']}\\n{{PROMPT_{prob_id.replace('-', '_').upper()}}}"
+    full_prompt = f"{{SYSTEM_PROMPT}}\\n\\nProblem: {prob['title']}\\n{{PROMPT_{prob_id_clean.replace('-', '_').upper()}}}"
     response = llm.prompt(full_prompt, temperature=0.2)
     code = extract_python_code(response)
-    metrics = evaluate_manibench_code(code)
 
-    kbench.assertions.assert_true(metrics["syntax_valid"], expectation="Python code must be syntactically valid")
-    kbench.assertions.assert_true(metrics["has_scene"], expectation="Code must define a Manim Scene subclass")
-    kbench.assertions.assert_true(metrics["is_ce_compliant"], expectation="Code must use Manim CE imports")
-    kbench.assertions.assert_true(metrics["conflicts_found"] == 0, expectation="Code must not use deprecated or GL-only APIs")
+    ref_video = "media/references/{prob_id_clean}_ref.mp4"
 
-    return metrics["composite_score"]
+    metrics = evaluate_manibench_submission(
+        code=code,
+        required_visual_events=REQUIRED_VISUAL_EVENTS_{prob_id_clean.replace('-', '_').upper()},
+        known_incompatibilities=KNOWN_INCOMPATIBILITIES_{prob_id_clean.replace('-', '_').upper()},
+        coverage_requirements=COVERAGE_REQUIREMENTS_{prob_id_clean.replace('-', '_').upper()},
+        ref_video_path=ref_video,
+    )
+
+    # Metric 1: Executability (Binary: 0 or 1)
+    kbench.assertions.assert_true(
+        metrics["executability"] == 1,
+        expectation=f"Metric 1 - Executability: Code runs without errors (Got: {{metrics['executability']}})",
+    )
+
+    # Metric 2: Version-Conflict Error Rate (VCER: 0.0 - 1.0)
+    kbench.assertions.assert_true(
+        metrics["vcer"] == 0.0,
+        expectation=f"Metric 2 - Version-Conflict Error Rate: No deprecated or ManimGL APIs (VCER: {{metrics['vcer']:.1%}}, conflicts: {{metrics['conflicts_found']}})",
+    )
+
+    # Metric 3: Alignment Score (0.0 - 1.0)
+    kbench.assertions.assert_true(
+        metrics["alignment_score"] >= 0.70,
+        expectation=f"Metric 3 - Alignment Score: Required visual events present (Score: {{metrics['alignment_score']:.2f}} >= 0.70)",
+    )
+
+    # Metric 4: Coverage Score (0.0 - 1.0)
+    kbench.assertions.assert_true(
+        metrics["coverage_score"] >= 0.70,
+        expectation=f"Metric 4 - Coverage Score: Pedagogical elements and annotations (Score: {{metrics['coverage_score']:.2f}} >= 0.70)",
+    )
+
+    if metrics.get("visual_similarity") is not None:
+        kbench.assertions.assert_true(
+            metrics["visual_similarity"] >= 0.70,
+            expectation=f"Metric 5 - Visual Similarity (DINOv2+DTW): Frame alignment score (Score: {{metrics['visual_similarity']:.2f}} >= 0.70)",
+        )
+
+    # Concise dictionary format for clean display in Kaggle Benchmarks main UI
+    return {{
+        "Exec": metrics["executability"],
+        "VCER": metrics["vcer"],
+        "Align": metrics["alignment_score"],
+        "Cover": metrics["coverage_score"],
+        "VisSim": metrics["visual_similarity"],
+    }}
 
 {func_name}.run(kbench.llm)
 '''

@@ -330,6 +330,28 @@ Coverage = 0.35×0.83 + 0.30×0.9 + 0.20×0.8 + 0.15×1.0 = 0.291 + 0.27 + 0.16 
 
 ---
 
+## Metric 5: Visual Embedding Similarity (DINOv2 + DTW) with Graceful Fallback
+
+**Definition**: Frame-by-frame temporal and visual-logic alignment of generated animations against 3Blue1Brown reference videos using DINOv2 self-supervised visual embeddings and Dynamic Time Warping (DTW).
+
+### Methodology
+
+1. **DINOv2 Feature Extraction**:
+   - Frames are sampled from both reference `.mp4` and candidate `.mp4` at 4 FPS.
+   - Per-frame embeddings are extracted using `facebook/dinov2-base` (Vision Transformer ViT-B/14) and L2-normalized across the 768-dimensional `[CLS]` token.
+2. **Dynamic Time Warping (DTW)**:
+   - A cosine distance matrix $D_{ij} = 1 - \cos(\mathbf{e}_i^{\text{ref}}, \mathbf{e}_j^{\text{cand}})$ is computed.
+   - DTW alignment path is solved, and cumulative cost is normalized to produce an alignment score in $[0.0, 1.0]$:
+     $$\text{Visual\_Similarity} = \exp(-1.5 \cdot \text{DTW\_Distance})$$
+
+### Graceful Fallback in Evaluation Environments
+
+- **Environment Detection**:
+  - If PyTorch, OpenCV, HuggingFace Transformers, and the reference `.mp4` video are detected, candidate animation is rendered and DINOv2+DTW visual similarity is computed.
+  - If vision dependencies or reference video files are not available (e.g., standard Kaggle Benchmarks execution containers without attached video datasets), the evaluator gracefully returns `"visual_similarity": null` without raising exceptions, ensuring the 4 core code-level rubric metrics continue without disruption.
+
+---
+
 ## Multi-Reviewer Workflow
 
 ### Disagreement Resolution

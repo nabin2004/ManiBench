@@ -63,7 +63,7 @@ def download_and_trim_pythonic(problem: dict) -> Path | None:
     try:
         # Download lightweight stream via yt_dlp Python API
         ydl_opts = {
-            "format": "b[height<=480][ext=mp4]/b[height<=480]/worst[ext=mp4]/worst",
+            "format": "b[height<=480][ext=mp4]/b[height<=720][ext=mp4]/mp4/best[ext=mp4]/best",
             "outtmpl": str(raw_file),
             "quiet": True,
             "no_warnings": True,

@@ -1,0 +1,6 @@
+{
+  "versionNumber": 1,
+  "name": "manibench-mb-001-colliding-blocks-compute-pi",
+  "description": "ManiBench Problem MB-001: Colliding Blocks Compute \u03c0",
+  "definition": "@kbench.task(name=\"manibench-mb-001-colliding-blocks-compute-pi\")\ndef run_mb_001(llm) -> float:\n    \"\"\"ManiBench Problem MB-001: Colliding Blocks Compute \u03c0\"\"\"\n    full_prompt = f\"{SYSTEM_PROMPT}\\n\\nProblem: Colliding Blocks Compute \u03c0\\n{PROMPT_MB_001}\"\n    response = llm.prompt(full_prompt, temperature=0.2)\n    code = extract_python_code(response)\n    metrics = evaluate_manibench_code(code)\n\n    kbench.assertions.assert_true(metrics[\"syntax_valid\"], expectation=\"Python code must be syntactically valid\")\n    kbench.assertions.assert_true(metrics[\"has_scene\"], expectation=\"Code must define a Manim Scene subclass\")\n    kbench.assertions.assert_true(metrics[\"is_ce_compliant\"], expectation=\"Code must use Manim CE imports\")\n    kbench.assertions.assert_true(metrics[\"conflicts_found\"] == 0, expectation=\"Code must not use deprecated or GL-only APIs\")\n\n    return metrics[\"composite_score\"]\n"
+}

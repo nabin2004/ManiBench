@@ -576,6 +576,25 @@ export DATASET_INFO_SCRIPT
 
 
 # ══════════════════════════════════════════════════════════════════════════
+#  KAGGLE DUAL GPU (T4×2) BENCHMARK TARGETS
+# ══════════════════════════════════════════════════════════════════════════
+
+.PHONY: kaggle-list-models kaggle-dry-run kaggle-bench
+
+## List all models in extensible registry
+kaggle-list-models:
+	$(PYTHON) scripts/run_kaggle_benchmark.py --list-models
+
+## Dry-run test of Kaggle benchmark pipeline
+kaggle-dry-run:
+	$(PYTHON) scripts/run_kaggle_benchmark.py --dry-run --problems MB-001 MB-002
+
+## Run benchmark on dual T4 GPUs (specify MODELS=... or runs default top models)
+kaggle-bench:
+	$(PYTHON) scripts/run_kaggle_benchmark.py $(if $(MODELS),--models $(MODELS),) --trials $(TRIALS) --strategy $(STRATEGY)
+
+
+# ══════════════════════════════════════════════════════════════════════════
 #  CLEANUP
 # ══════════════════════════════════════════════════════════════════════════
 
