@@ -159,19 +159,45 @@ kaggle b t publish manibench-mb-001-colliding-blocks-compute-pi
 | MB-003 | `manibench-mb-003-but-what-is-a-convolution` | `tasks/mb_003_but_what_is_a_convolution.py` |
 | MB-004 | `manibench-mb-004-eigenvectors-eigenvalues-chapter-14` | `tasks/mb_004_eigenvectors_eigenvalues_chapter_14.py` |
 | MB-005 | `manibench-mb-005-the-determinant-chapter-6` | `tasks/mb_005_the_determinant_chapter_6.py` |
-| MB-006 | `manibench-mb-006-but-what-is-the-central-limit-theorem` | `tasks/mb_006_but_what_is_the_central_limit_theorem.py` |
-| MB-007 | `manibench-mb-007-the-medical-test-paradox` | `tasks/mb_007_the_medical_test_paradox.py` |
-| MB-008 | `manibench-mb-008-visualizing-the-chain-rule` | `tasks/mb_008_visualizing_the_chain_rule.py` |
-| MB-009 | `manibench-mb-009-integration-and-the-fundamental-theorem-of-calculus` | `tasks/mb_009_integration_and_the_fundamental_theorem_of_calculus.py` |
-| MB-010 | `manibench-mb-010-taylor-series` | `tasks/mb_010_taylor_series.py` |
-| MB-011 | `manibench-mb-011-the-hairy-ball-theorem` | `tasks/mb_011_the_hairy_ball_theorem.py` |
+| MB-006 | `manibench-006-central-limit-theorem` | `tasks/mb_006_but_what_is_the_central_limit_theorem.py` |
+| MB-007 | `manibench-007-the-medical-test-paradox` | `tasks/mb_007_the_medical_test_paradox.py` |
+| MB-008 | `manibench-008-visualizing-the-chain-rule` | `tasks/mb_008_visualizing_the_chain_rule.py` |
+| MB-009 | `manibench-009-integration-and-ftc` | `tasks/mb_009_integration_and_the_fundamental_theorem_of_calculus.py` |
+| MB-010 | `manibench-010-taylor-series` | `tasks/mb_010_taylor_series.py` |
+| MB-011 | `manibench-011-the-hairy-ball-theorem` | `tasks/mb_011_the_hairy_ball_theorem.py` |
 | MB-012 | `manibench-mb-012-the-unexpectedly-hard-windmill-problem` | `tasks/mb_012_the_unexpectedly_hard_windmill_problem.py` |
 
 ---
 
-## 6. Important Rules & Gotchas
+## 6. Evaluation Rubric & Scoring
+
+Each task function returns a concise, structured `dict` designed for clear rendering in the Kaggle Benchmarks main UI and leaderboard:
+
+```python
+return {
+    "Exec": metrics["executability"],        # Binary: 1 or 0
+    "VCER": metrics["vcer"],                 # Version-Conflict Error Rate: 0.0 - 1.0
+    "Align": metrics["alignment_score"],     # Required Visual Events: 0.0 - 1.0
+    "Cover": metrics["coverage_score"],       # Pedagogical Density: 0.0 - 1.0
+    "VisSim": metrics["visual_similarity"],   # DINOv2 + DTW: 0.0 - 1.0 or null
+}
+```
+
+### Metrics Breakdown
+
+1. **Executability (`Exec`: 0 or 1)**: Validates syntax (`ast.parse`), CE imports (`from manim import *`), Scene subclass with `construct(self)`, and dry-run rendering.
+2. **Version-Conflict Error Rate (`VCER`: 0.0 – 1.0)**: Checks for deprecated or ManimGL-specific APIs (`ShowCreation`, `TexMobject`, `CONFIG = {}`, `manim_imports_ext`, etc.) and problem-specific known incompatibilities.
+3. **Alignment Score (`Align`: 0.0 – 1.0)**: Weighted heuristic and AST keyword detection of problem-specific `required_visual_events` from `ManiBench_Pilot_Dataset.json`.
+4. **Coverage Score (`Cover`: 0.0 – 1.0)**: Density of pedagogical elements across mathematical annotations (0.35), visual mapping (0.30), numeric evidence (0.20), and structural clarity (0.15).
+5. **Optional Visual Similarity with Graceful Fallback (`VisSim`: 0.0 – 1.0 or null)**:
+   - If PyTorch, OpenCV, Transformers, and a reference `.mp4` are detected in the environment, it renders the candidate video and computes the DINOv2 (`facebook/dinov2-base`) + Dynamic Time Warping (DTW) alignment score.
+   - If not available (e.g. running on Kaggle without the video dataset attached), it reports `"visual_similarity": null` and evaluates the 4 core rubric metrics without crashing.
+
+---
+
+## 7. Important Rules & Gotchas
 
 1. **Must call `.run()`**: Every task function in Python must end with `task_fn.run(kbench.llm)` to ensure outputs are recorded.
 2. **Repeated flags**: For flags accepting multiple values (like `-m` for models or `-d` for datasets), pass the flag multiple times (e.g., `-m model-a -m model-b`), **not** space-separated.
-3. **Dataset persistence**: When re-pushing a task, repeat all `-d` flags. Re-pushing without `-d` detaches previous datasets.
-4. **Canonical Model Slugs**: Use canonical model slugs (`gemini-3.5-flash`, `claude-haiku-4-5`) without provider prefixes.
+3. **Windows UTF-8**: Always set `$env:PYTHONUTF8="1"` in PowerShell when running Kaggle CLI tasks to avoid `charmap` codec errors with mathematical symbols.
+4. **Sequential Pushes**: Use `uv run python tasks/upload_tasks.py --wait` to avoid hitting backend concurrency limits during task uploads.
