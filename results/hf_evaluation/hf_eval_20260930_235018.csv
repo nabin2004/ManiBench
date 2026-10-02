@@ -1,0 +1,5 @@
+model_id,short_name,family,format,problem_id,trial,strategy,gen_time_s,executability,error_type,error_message,vcer,alignment_score,coverage_score,code_len_lines,code_path
+nabin2004/qwen-Manimator-1-merged,qwen-Manimator-1-merged,qwen-manimator,merged,MB-001,1,zero_shot,0.0,1,,,0.4286,0.5169,0.46,15,evaluation\generated_code\qwen-Manimator-1-merged\zero_shot\MB-001_trial1.py
+nabin2004/qwen-Manimator-1-merged,qwen-Manimator-1-merged,qwen-manimator,merged,MB-002,1,zero_shot,0.0,1,,,0.0,0.5,0.46,15,evaluation\generated_code\qwen-Manimator-1-merged\zero_shot\MB-002_trial1.py
+nabin2004/AOS-qwen3-8b-narrated-sft-merged,AOS-qwen3-8b-narrated-sft-merged,aos-qwen3,merged,MB-001,1,zero_shot,0.0,1,,,0.4286,0.5169,0.46,15,evaluation\generated_code\AOS-qwen3-8b-narrated-sft-merged\zero_shot\MB-001_trial1.py
+nabin2004/AOS-qwen3-8b-narrated-sft-merged,AOS-qwen3-8b-narrated-sft-merged,aos-qwen3,merged,MB-002,1,zero_shot,0.0,1,,,0.0,0.5,0.46,15,evaluation\generated_code\AOS-qwen3-8b-narrated-sft-merged\zero_shot\MB-002_trial1.py

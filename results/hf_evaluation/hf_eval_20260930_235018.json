@@ -1,0 +1,108 @@
+{
+  "metadata": {
+    "benchmark": "ManiBench (New Version)",
+    "timestamp": "20260930_235018",
+    "backend": "dry-run",
+    "trials": 1,
+    "strategy": "zero_shot",
+    "total_records": 4
+  },
+  "model_summaries": {
+    "qwen-Manimator-1-merged": {
+      "model_id": "nabin2004/qwen-Manimator-1-merged",
+      "family": "qwen-manimator",
+      "format": "merged",
+      "samples": 2,
+      "executability_mean": 1.0,
+      "pass_rate_pct": 100.0,
+      "vcer_mean": 0.2143,
+      "alignment_mean": 0.5085,
+      "coverage_mean": 0.46
+    },
+    "AOS-qwen3-8b-narrated-sft-merged": {
+      "model_id": "nabin2004/AOS-qwen3-8b-narrated-sft-merged",
+      "family": "aos-qwen3",
+      "format": "merged",
+      "samples": 2,
+      "executability_mean": 1.0,
+      "pass_rate_pct": 100.0,
+      "vcer_mean": 0.2143,
+      "alignment_mean": 0.5085,
+      "coverage_mean": 0.46
+    }
+  },
+  "detailed_results": [
+    {
+      "model_id": "nabin2004/qwen-Manimator-1-merged",
+      "short_name": "qwen-Manimator-1-merged",
+      "family": "qwen-manimator",
+      "format": "merged",
+      "problem_id": "MB-001",
+      "trial": 1,
+      "strategy": "zero_shot",
+      "gen_time_s": 0.0,
+      "executability": 1,
+      "error_type": null,
+      "error_message": null,
+      "vcer": 0.4286,
+      "alignment_score": 0.5169,
+      "coverage_score": 0.46,
+      "code_len_lines": 15,
+      "code_path": "evaluation\\generated_code\\qwen-Manimator-1-merged\\zero_shot\\MB-001_trial1.py"
+    },
+    {
+      "model_id": "nabin2004/qwen-Manimator-1-merged",
+      "short_name": "qwen-Manimator-1-merged",
+      "family": "qwen-manimator",
+      "format": "merged",
+      "problem_id": "MB-002",
+      "trial": 1,
+      "strategy": "zero_shot",
+      "gen_time_s": 0.0,
+      "executability": 1,
+      "error_type": null,
+      "error_message": null,
+      "vcer": 0.0,
+      "alignment_score": 0.5,
+      "coverage_score": 0.46,
+      "code_len_lines": 15,
+      "code_path": "evaluation\\generated_code\\qwen-Manimator-1-merged\\zero_shot\\MB-002_trial1.py"
+    },
+    {
+      "model_id": "nabin2004/AOS-qwen3-8b-narrated-sft-merged",
+      "short_name": "AOS-qwen3-8b-narrated-sft-merged",
+      "family": "aos-qwen3",
+      "format": "merged",
+      "problem_id": "MB-001",
+      "trial": 1,
+      "strategy": "zero_shot",
+      "gen_time_s": 0.0,
+      "executability": 1,
+      "error_type": null,
+      "error_message": null,
+      "vcer": 0.4286,
+      "alignment_score": 0.5169,
+      "coverage_score": 0.46,
+      "code_len_lines": 15,
+      "code_path": "evaluation\\generated_code\\AOS-qwen3-8b-narrated-sft-merged\\zero_shot\\MB-001_trial1.py"
+    },
+    {
+      "model_id": "nabin2004/AOS-qwen3-8b-narrated-sft-merged",
+      "short_name": "AOS-qwen3-8b-narrated-sft-merged",
+      "family": "aos-qwen3",
+      "format": "merged",
+      "problem_id": "MB-002",
+      "trial": 1,
+      "strategy": "zero_shot",
+      "gen_time_s": 0.0,
+      "executability": 1,
+      "error_type": null,
+      "error_message": null,
+      "vcer": 0.0,
+      "alignment_score": 0.5,
+      "coverage_score": 0.46,
+      "code_len_lines": 15,
+      "code_path": "evaluation\\generated_code\\AOS-qwen3-8b-narrated-sft-merged\\zero_shot\\MB-002_trial1.py"
+    }
+  ]
+}
