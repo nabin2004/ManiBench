@@ -3,6 +3,18 @@
 
 This guide details the complete end-to-end setup for evaluating **Manim-specialized Large Language Models** on **Kaggle GPU Dual Tesla T4 (2×16GB VRAM)** using the updated **ManiBench** benchmark suite, producing **publication-ready LaTeX tables, Markdown leaderboards, and CSV exports**.
 
+> **TL;DR (updated flow).** The whole pipeline is now a single resumable command — see
+> **[KAGGLE_QUICKSTART.md](KAGGLE_QUICKSTART.md)**. In a Kaggle notebook:
+>
+> ```python
+> !git clone https://github.com/nabin2004/ManiBench.git
+> %cd ManiBench
+> !python scripts/kaggle_run.py --preset paper
+> ```
+>
+> The rest of this document describes the architecture, model families, metrics and
+> those same phases in detail.
+
 ---
 
 ## 1. Overview & Architecture

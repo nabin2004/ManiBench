@@ -196,6 +196,43 @@ Each analysis includes:
 
 ## Quick Start
 
+### Kaggle GPU (T4 × 2) — one command
+
+Everything the Kaggle notebook used to do step by step (apt/pip bootstrap, NumPy-safe
+install, model preflight, dual-GPU inference, the 8 metrics, LaTeX tables, 300-DPI
+figures, zip bundle) now lives in a single resumable entry point:
+
+```bash
+python scripts/kaggle_run.py --preset paper          # 8 models × 12 tasks, rendered
+```
+
+In a Kaggle notebook cell:
+
+```python
+!git clone https://github.com/nabin2004/ManiBench.git
+%cd ManiBench
+!python scripts/kaggle_run.py --preset paper
+```
+
+Presets: `paper` (headline run) · `full` (whole registry) · `quick` (1 model × 2 tasks,
+no render) · `smoke` (synthetic code, no weights) · `smoke-render` (synthetic code with
+real Manim rendering). Every run is **checkpointed** — if Kaggle pre-empts the session,
+re-running the same command resumes exactly where it stopped.
+
+| Flag | Purpose |
+| :--- | :--- |
+| `--models a/b c/d` | Evaluate specific Hugging Face repos or catalog short names |
+| `--problems MB-001 MB-005` | Restrict the problem set |
+| `--trials 3` | Independent generations per task |
+| `--skip-render` | Static metrics only (no Manim execution) |
+| `--load-in-4bit` | NF4 quantization for 31B models |
+| `--compute-visual-sim --with-vision` | DINOv2 + DTW and SSIM against reference clips |
+| `--fresh` | Ignore previous checkpoints and start over |
+| `--no-install` | Use the current environment as-is (local runs) |
+
+See **[KAGGLE_QUICKSTART.md](KAGGLE_QUICKSTART.md)** for the full Kaggle walkthrough and
+`python scripts/selftest_kaggle_run.py` for an offline verification of the whole pipeline.
+
 ### Automated Evaluation (Recommended)
 
 Run the full benchmark evaluation programmatically using the `evaluation/` framework.

@@ -12,6 +12,7 @@ Checks:
 
 import ast
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -111,6 +112,7 @@ def run_manim_code(
     scene_name: str | None = None,
     timeout: int = 60,
     quality: str = "l",        # low quality for speed
+    video_out_dir: "str | Path | None" = None,
 ) -> dict[str, Any]:
     """
     Execute Manim code in a subprocess and capture results.
@@ -120,6 +122,9 @@ def run_manim_code(
         scene_name: Scene class to render (auto-detected if None)
         timeout: Max seconds to wait
         quality: Manim quality flag (l=low, m=medium, h=high)
+        video_out_dir: When given, the rendered .mp4 is copied here (stable path)
+            before the temporary render directory is deleted, so visual similarity
+            metrics can reuse the exact clip that proved executability.
 
     Returns:
         {
@@ -181,9 +186,20 @@ def run_manim_code(
             video_path = None
             media_dir = Path(tmpdir) / "media" / "videos" / "scene"
             if media_dir.exists():
-                videos = list(media_dir.rglob("*.mp4"))
+                videos = sorted(media_dir.rglob("*.mp4"))
                 if videos:
                     video_path = str(videos[0])
+
+            # Persist the clip outside the temporary directory before it is deleted
+            if video_path and video_out_dir:
+                try:
+                    out_dir = Path(video_out_dir)
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    dest = out_dir / Path(video_path).name
+                    shutil.copy2(video_path, dest)
+                    video_path = str(dest)
+                except OSError:
+                    pass
 
             # Parse error type from stderr
             error_type = None
@@ -259,7 +275,12 @@ def _parse_error(stderr: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def compute_executability(code: str, timeout: int = 60, skip_render: bool = False) -> dict[str, Any]:
+def compute_executability(
+    code: str,
+    timeout: int = 60,
+    skip_render: bool = False,
+    video_out_dir: "str | Path | None" = None,
+) -> dict[str, Any]:
     """
     Full executability check pipeline.
 
@@ -267,6 +288,7 @@ def compute_executability(code: str, timeout: int = 60, skip_render: bool = Fals
         code: The generated Python/Manim code to check.
         timeout: Seconds to allow for Manim rendering.
         skip_render: If True, skip actual Manim execution (static analysis only).
+        video_out_dir: Optional directory to keep a copy of the rendered clip in.
 
     Returns:
         {
@@ -300,6 +322,7 @@ def compute_executability(code: str, timeout: int = 60, skip_render: bool = Fals
         "stdout": "",
         "stderr": "",
         "command": [],
+        "video_path": None,
         "error_type": None,
         "error_message": None,
         "scene_names": [],
@@ -335,7 +358,7 @@ def compute_executability(code: str, timeout: int = 60, skip_render: bool = Fals
         result["render_attempted"] = False
         return result
 
-    render = run_manim_code(code, timeout=timeout)
+    render = run_manim_code(code, timeout=timeout, video_out_dir=video_out_dir)
     result["render_attempted"] = True
     result["render_success"] = render["success"]
     result["error_type"] = render["error_type"]
@@ -345,6 +368,9 @@ def compute_executability(code: str, timeout: int = 60, skip_render: bool = Fals
     result["stdout"] = render.get("stdout", "")
     result["stderr"] = render.get("stderr", "")
     result["command"] = render.get("command", [])
+    # Expose the rendered clip so downstream visual metrics (DINOv2+DTW, SSIM)
+    # can reuse this single render instead of rendering the scene a second time.
+    result["video_path"] = render.get("video_path")
 
     # Final verdict
     result["executability"] = 1 if render["success"] else 0

@@ -156,6 +156,22 @@ def compute_dtw_alignment(ref_embeddings: np.ndarray, cand_embeddings: np.ndarra
     }
 
 
+_DEFAULT_EXTRACTOR: "DINOv2FeatureExtractor | None" = None
+
+
+def get_default_extractor(model_name: str = "facebook/dinov2-base") -> "DINOv2FeatureExtractor":
+    """
+    Return a process-wide cached DINOv2 extractor.
+
+    Loading ViT-B/14 takes several seconds and ~350 MB of VRAM; without caching it
+    would be reloaded for *every* trial of every model.
+    """
+    global _DEFAULT_EXTRACTOR
+    if _DEFAULT_EXTRACTOR is None:
+        _DEFAULT_EXTRACTOR = DINOv2FeatureExtractor(model_name=model_name)
+    return _DEFAULT_EXTRACTOR
+
+
 def compute_visual_similarity(
     ref_video_path: str | Path,
     cand_video_path: str | Path,
@@ -164,20 +180,28 @@ def compute_visual_similarity(
 ) -> dict[str, Any]:
     """
     Main entry point for computing DINOv2 + DTW Visual Embedding Similarity.
+
+    NOTE the argument order: (reference, candidate) - both may be either a
+    rendered .mp4 or a directory of frames.
     """
     ref_path = Path(ref_video_path)
     cand_path = Path(cand_video_path)
 
     if not ref_path.exists():
-        return {"error": f"Reference video not found at {ref_path}", "alignment_score": 0.0}
+        return {"error": f"Reference video not found at {ref_path}", "alignment_score": None}
     if not cand_path.exists():
-        return {"error": f"Candidate video not found at {cand_path}", "alignment_score": 0.0}
+        return {"error": f"Candidate video not found at {cand_path}", "alignment_score": None}
+
+    if extractor is None and not _CV2_AVAILABLE:
+        return {"error": "OpenCV (cv2) is required for video visual similarity - "
+                         "install it with: pip install opencv-python-headless",
+                "alignment_score": None}
 
     if extractor is None:
         try:
-            extractor = DINOv2FeatureExtractor()
+            extractor = get_default_extractor()
         except Exception as e:
-            return {"error": f"Failed to initialize DINOv2 feature extractor: {e}", "alignment_score": 0.0}
+            return {"error": f"Failed to initialize DINOv2 feature extractor: {e}", "alignment_score": None}
 
     ref_emb = extractor.extract_video_embeddings(ref_path, target_fps=target_fps)
     cand_emb = extractor.extract_video_embeddings(cand_path, target_fps=target_fps)

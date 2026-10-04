@@ -106,6 +106,14 @@ help:
 	@echo "  make analyze-all    Merge & analyze ALL results in results/"
 	@echo "  make list-results   Show available results files"
 	@echo ""
+	@echo "  KAGGLE (T4×2) — one-command pipeline"
+	@echo "  ─────────────────────────────────────────────────────────────"
+	@echo "  make kaggle-run          Full run: bootstrap + benchmark + paper bundle"
+	@echo "  make kaggle-smoke        Offline pipeline test (no GPU/weights)"
+	@echo "  make kaggle-smoke-render Offline test with real Manim rendering"
+	@echo "  make kaggle-selftest     Verify the runner end-to-end locally"
+	@echo "  make kaggle-notebook     Regenerate the Kaggle launcher notebook"
+	@echo ""
 	@echo "  UTILITIES"
 	@echo "  ─────────────────────────────────────────────────────────────"
 	@echo "  make validate       Validate dataset JSON + evaluation code"
@@ -579,7 +587,7 @@ export DATASET_INFO_SCRIPT
 #  KAGGLE DUAL GPU (T4×2) BENCHMARK TARGETS
 # ══════════════════════════════════════════════════════════════════════════
 
-.PHONY: kaggle-list-models kaggle-dry-run kaggle-bench
+.PHONY: kaggle-list-models kaggle-dry-run kaggle-bench kaggle-run kaggle-smoke kaggle-smoke-render kaggle-selftest kaggle-notebook
 
 ## List all models in extensible registry
 kaggle-list-models:
@@ -592,6 +600,26 @@ kaggle-dry-run:
 ## Run benchmark on dual T4 GPUs (specify MODELS=... or runs default top models)
 kaggle-bench:
 	$(PYTHON) scripts/run_kaggle_benchmark.py $(if $(MODELS),--models $(MODELS),) --trials $(TRIALS) --strategy $(STRATEGY)
+
+## One-command Kaggle run: bootstrap + preflight + benchmark + tables + figures + zip
+kaggle-run:
+	$(PYTHON) scripts/kaggle_run.py --preset $(or $(PRESET),paper) $(if $(MODELS),--models $(MODELS),) $(if $(PROBLEMS),--problems $(PROBLEMS),)
+
+## Offline pipeline smoke test (no GPU, no weights, no pip installs)
+kaggle-smoke:
+	$(PYTHON) scripts/kaggle_run.py --preset smoke --no-install --fresh
+
+## Offline smoke test WITH real Manim CE rendering (validates Cairo/FFmpeg)
+kaggle-smoke-render:
+	$(PYTHON) scripts/kaggle_run.py --preset smoke-render --no-install --fresh
+
+## Verify the runner end-to-end locally, including NumPy-corruption detection
+kaggle-selftest:
+	$(PYTHON) scripts/selftest_kaggle_run.py
+
+## Regenerate ManiBench_Kaggle_T4x2_Benchmark.ipynb from its generator
+kaggle-notebook:
+	$(PYTHON) scripts/build_kaggle_notebook.py
 
 
 # ══════════════════════════════════════════════════════════════════════════

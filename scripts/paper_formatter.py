@@ -18,6 +18,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
+def describe_hardware(hw: Optional[Dict[str, Any]]) -> str:
+    """Human-readable hardware string derived from the actual run environment."""
+    if not hw:
+        return "Kaggle GPU (accelerator: nvidiaTeslaT4 x2) or local CPU/GPU host"
+    devices = hw.get("devices") or []
+    if devices and hw.get("cuda_available"):
+        names = ", ".join(f"{d['name']} ({d.get('vram_gb', '?')}GB)" for d in devices)
+        return f"{len(devices)}x {names} - {hw.get('total_vram_gb', '?')}GB aggregate VRAM"
+    return "CPU (no CUDA device detected)"
+
+
 def _latex_escape(text: str) -> str:
     """Escape special LaTeX characters."""
     replacements = {
@@ -488,10 +499,11 @@ class PaperFormatter:
             "# ManiBench Leaderboard & Paper Results",
             "",
             f"- **Benchmark:** ManiBench (New Version — 5 Core Metrics)",
-            f"- **Hardware Environment:** Kaggle GPU Dual NVIDIA Tesla T4 (2×16GB VRAM)",
+            f"- **Hardware Environment:** {describe_hardware(meta.get('hardware'))}",
             f"- **Timestamp:** {meta.get('timestamp', 'N/A')}",
             f"- **Total Model Evaluations:** {len(self.model_summaries)}",
             f"- **Trials per Problem:** {meta.get('trials', 1)}",
+            f"- **Deterministic Rendering:** {meta.get('skip_render', False) and 'disabled (static analysis)' or 'enabled (Manim CE render)'}",
             "",
             "## Primary Benchmark Results",
             "",
@@ -542,11 +554,12 @@ class PaperFormatter:
         )
         best_model = sorted_models[0]
         lowest_vcer = min(self.model_summaries.values(), key=lambda s: s["vcer_pct"])
+        n_problems = len({r.get("problem_id") for r in self.records if r.get("problem_id")}) or 12
 
         prose = f"""## Experimental Results & Analysis
 
 ### Main Benchmark Findings
-We evaluated models across the 12 problems in the ManiBench benchmark using dual NVIDIA Tesla T4 GPUs (32GB aggregate VRAM). Table~\\ref{{tab:main_manibench_results}} summarizes the comparative performance across executability (Pass@1), version-conflict error rate (VCER), visual alignment, and pedagogical coverage.
+We evaluated models across the {n_problems} problems in the ManiBench benchmark on {describe_hardware(self.metadata.get('hardware'))}. Table~\\ref{{tab:main_manibench_results}} summarizes the comparative performance across executability (Pass@1), version-conflict error rate (VCER), visual alignment, and pedagogical coverage.
 
 The top-performing model overall is **{best_model['short_name']}**, achieving a Pass@1 executability of **{best_model['pass_rate_pct']:.1f}\\%**, with an alignment score of **{best_model['alignment_mean']:.3f}** and pedagogical coverage of **{best_model['coverage_mean']:.3f}**. 
 
@@ -597,16 +610,24 @@ As detailed in Table~\\ref{{tab:error_taxonomy}}, runtime errors in Manim genera
         if self.model_summaries:
             first_s = next(iter(self.model_summaries.values()))
             with open(csv_summary_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=list(first_s.keys()))
+                writer = csv.DictWriter(f, fieldnames=list(first_s.keys()), extrasaction="ignore")
                 writer.writeheader()
                 writer.writerows(self.model_summaries.values())
         exported["csv_summary"] = csv_summary_path
 
         # 4. CSV Per-Trial
+        #    Records can legitimately differ (e.g. a generation error row). Use the
+        #    union of all keys and ignore extras so the export can never crash with
+        #    "dict contains fields not in fieldnames".
         csv_trials_path = tables_dir / "results_per_trial.csv"
         if self.records:
+            fieldnames: List[str] = []
+            for rec in self.records:
+                for key in rec.keys():
+                    if key not in fieldnames:
+                        fieldnames.append(key)
             with open(csv_trials_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=list(self.records[0].keys()))
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
                 writer.writeheader()
                 writer.writerows(self.records)
         exported["csv_trials"] = csv_trials_path
