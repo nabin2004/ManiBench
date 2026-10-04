@@ -66,7 +66,7 @@ except ImportError:
         extract_python_code,
     )
     def compute_mathematical_fidelity(code, problem=None):
-        return {"mathematical_fidelity": 0.5, "symbolic_validity": 0.5}
+        return {"mas_score": 0.5, "mathematical_fidelity": 0.5, "symbolic_validity": 0.5}
     def compute_code_quality(code):
         return {"code_maintainability_index": 70.0, "cyclomatic_complexity": 5}
     def compute_constraint_adherence(code, problem=None):
@@ -739,9 +739,17 @@ def run_benchmark(
                             prob.get("coverage_requirements", []), default={},
                         ) or {}
 
-                        # Metric 5: Mathematical Accuracy Score (MAS)
-                        mas_res = safe_metric("mathematical_fidelity", compute_mathematical_fidelity, code, prob, default={}) or {}
-                        mas_val = mas_res.get("mathematical_fidelity", mas_res.get("mas", 0.0))
+                        # Metric 5: Mathematical Accuracy Score (MAS).
+                        # NOTE: pass the equation list, never the problem dict - a dict
+                        # used to be iterated key-by-key and always scored 0.0. The
+                        # pilot dataset ships no ground-truth equations, so MAS reports
+                        # mathematical annotation density (see the metric docstring).
+                        ground_truth = prob.get("ground_truth_equations") or prob.get("equations") or []
+                        mas_res = safe_metric("mathematical_fidelity", compute_mathematical_fidelity,
+                                              code, ground_truth, default={}) or {}
+                        mas_val = mas_res.get("mas_score",
+                                              mas_res.get("mathematical_fidelity",
+                                                          mas_res.get("mas", 0.0)))
 
                         # Metric 6: Code Maintainability Index (CMI)
                         cmi_res = safe_metric("code_quality", compute_code_quality, code, default={}) or {}
@@ -899,6 +907,7 @@ def run_benchmark(
         "exported_files": exported_files,
         "json_path": json_path,
         "records": records,
+        "formatter": formatter,
         "model_statuses": model_statuses,
         "checkpoint_path": checkpoint_path,
         "hardware": hw,

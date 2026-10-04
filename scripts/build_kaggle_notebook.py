@@ -103,7 +103,8 @@ Run `python scripts/kaggle_run.py --help` inside the notebook for the full list.
 CONFIG_CODE = '''# ══════════════════════════════════════════════════════════════════════════
 #  ManiBench Kaggle configuration - the only cell you normally need to edit
 # ══════════════════════════════════════════════════════════════════════════
-PRESET = "paper"           # paper | full | quick | smoke | smoke-render
+PRESET = "paper"           # paper | trio | full | quick | smoke | smoke-render
+                           #   trio = base vs SFT-merged vs GRPO-adapter (Qwen3-8B)
 
 MODELS = None              # None = preset default, or e.g. ["Qwen/Qwen3-8B"]
 PROBLEMS = None            # None = all 12 problems, or e.g. ["MB-001", "MB-005"]

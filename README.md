@@ -233,6 +233,53 @@ re-running the same command resumes exactly where it stopped.
 See **[KAGGLE_QUICKSTART.md](KAGGLE_QUICKSTART.md)** for the full Kaggle walkthrough and
 `python scripts/selftest_kaggle_run.py` for an offline verification of the whole pipeline.
 
+### Model Trio: base vs. SFT vs. GRPO (publication bundle)
+
+`scripts/run_model_trio.py` evaluates three checkpoints of the **same Qwen3-8B
+backbone** and emits a camera-ready package:
+
+| Role | Hugging Face repo | Format |
+| :--- | :--- | :--- |
+| Foundation baseline | [`Qwen/Qwen3-8B`](https://huggingface.co/Qwen/Qwen3-8B) | base |
+| SFT (merged weights) | [`nabin2004/AOS-Qwen3-8B-Merged`](https://huggingface.co/nabin2004/AOS-Qwen3-8B-Merged) | merged |
+| GRPO (`r=16` LoRA adapter) | [`nabin2004/qwen-Manimator-1-grpo`](https://huggingface.co/nabin2004/qwen-Manimator-1-grpo) | lora |
+
+```bash
+make trio TRIALS=3                                  # full run + bundle
+python scripts/run_model_trio.py --trials 3         # same, explicit
+python scripts/run_model_trio.py --dry-run --skip-render   # offline pipeline check
+python scripts/run_model_trio.py --from-json results/trio_publication/benchmark_run_*.json
+```
+
+`--from-json` rebuilds every figure and the report from a finished run **without a
+GPU** — useful when iterating on the write-up.
+
+Publication artifacts written to `results/trio_publication/`:
+
+| Artifact | What it is |
+| :--- | :--- |
+| `figures/fig01_methodology` | End-to-end pipeline diagram (dataset → variants → metrics → paper) |
+| `figures/fig02_leaderboard` | Pass@1 + VCER with SD error bars |
+| `figures/fig03_metric_radar` | Seven-axis normalized metric profile |
+| `figures/fig04_drift_pareto` | VCER vs. executability with Pareto frontier, bubble = coverage |
+| `figures/fig05_problem_heatmap` | Model × task heatmaps (Pass@1 and VCER) |
+| `figures/fig06_domain_breakdown` | Per-domain executability and drift |
+| `figures/fig07_error_taxonomy` | Failure-mode shares per model |
+| `figures/fig08_significance_forest` | Paired Δ vs. baseline with bootstrap 95% CI and p-values |
+| `figures/fig09_metric_correlation` | Metric inter-correlation matrix |
+| `figures/figure_contact_sheet` | 2-column montage of the whole set |
+| `tables/*.tex` | `booktabs` tables incl. `trio_summary.tex`, `trio_significance.tex` |
+| `tables/results_*.csv` | Model-level and per-trial data |
+| `REPORT.md` | Narrative report with embedded figures and statistics |
+| `latex_includes.tex` | Paste-ready `\input` / `\includegraphics` lines |
+| `ARTIFACTS.md` | Index of every artifact |
+| `run_manifest.json` | Exact config, hardware and model provenance |
+| `manibench_trio_*.zip` | Everything above, for Overleaf/reviewers |
+
+Every figure is written as **vector PDF** (for LaTeX) and **300-DPI PNG** (for
+slides/PR). The same suite is produced by the Kaggle runner (disable with
+`--basic-figures`), and `make trio-figures` regenerates it from an existing run.
+
 ### Automated Evaluation (Recommended)
 
 Run the full benchmark evaluation programmatically using the `evaluation/` framework.

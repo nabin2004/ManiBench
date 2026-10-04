@@ -75,6 +75,7 @@ directly in the notebook **Output** panel for download.
 | Preset | Meaning |
 | :--- | :--- |
 | `paper` *(default)* | 8 headline models × 12 problems × 1 trial, rendering on |
+| `trio` | base vs. SFT-merged vs. GRPO-adapter on Qwen3-8B |
 | `full` | Every non-GGUF model in the registry (long; run it across several sessions) |
 | `quick` | 1 baseline model × 2 problems, rendering off — environment sanity check |
 | `smoke` | Synthetic code, no weights, no rendering — pipeline test on CPU |
@@ -84,6 +85,9 @@ directly in the notebook **Output** panel for download.
 # only two tasks, three trials, 4-bit, keep every artifact
 python scripts/kaggle_run.py --preset paper --problems MB-001 MB-005 --trials 3 \
     --load-in-4bit --seed 42
+
+# base vs SFT-merged vs GRPO-adapter trio
+python scripts/kaggle_run.py --preset trio --trials 3
 
 # any Hugging Face model, including LoRA adapters
 python scripts/kaggle_run.py --models your-org/your-manim-model
@@ -96,6 +100,25 @@ python scripts/kaggle_run.py --family baseline
 ```
 
 Full option list: `python scripts/kaggle_run.py --help`.
+
+### Publication bundle for the trio
+
+For the extended package — methodology diagram, metric radar, per-task heatmaps,
+failure taxonomy, significance forest plot, metric correlations, a narrative
+`REPORT.md` and paste-ready LaTeX includes — use the dedicated trio script (it
+reuses the same engine, checkpointing and metrics):
+
+```bash
+!python scripts/run_model_trio.py --trials 3
+```
+
+It writes `results/trio_publication/` with 9 figures (PDF + 300-DPI PNG), LaTeX
+tables, CSVs, `REPORT.md`, `latex_includes.tex`, `ARTIFACTS.md`, a `run_manifest.json`
+and a zip bundle. Figures alone can be rebuilt later on any machine (no GPU):
+
+```bash
+python scripts/run_model_trio.py --from-json results/trio_publication/benchmark_run_*.json
+```
 
 ---
 

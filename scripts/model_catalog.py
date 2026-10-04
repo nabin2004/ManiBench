@@ -126,6 +126,17 @@ _DEFAULT_CATALOG: List[ModelSpec] = [
 
     # ── Family 2: AOS-Qwen3-8B (SFT, DPO, GRPO, Narrated) ──────────────────
     ModelSpec(
+        id="nabin2004/AOS-Qwen3-8B-Merged",
+        short_name="AOS-Qwen3-8B-Merged",
+        family="aos-qwen3",
+        format="merged",
+        base_model="Qwen/Qwen3-8B",
+        param_size="8B",
+        training_method="SFT",
+        description="Supervised fine-tuned Manim model with the adapter merged into Qwen3-8B",
+        chat_template_family="chatml",
+    ),
+    ModelSpec(
         id="nabin2004/AOS-qwen3-8b-narrated-sft-merged",
         short_name="AOS-qwen3-8b-narrated-sft-merged",
         family="aos-qwen3",

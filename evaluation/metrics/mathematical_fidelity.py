@@ -36,6 +36,14 @@ import re
 import warnings
 from typing import Any
 
+try:  # Python 3.8+
+    from functools import lru_cache
+except ImportError:  # pragma: no cover
+    def lru_cache(*_args, **_kwargs):  # type: ignore
+        def wrapper(fn):
+            return fn
+        return wrapper
+
 # ── Optional symbolic dependencies ─────────────────────────────────────────
 _SYMPY_AVAILABLE = False
 _L2S_AVAILABLE   = False
@@ -58,6 +66,10 @@ try:
 except ImportError:
     pass
 
+# sympy's ANTLR-based LaTeX parser emits this on images without antlr4; it is
+# harmless (the metric falls back to string similarity) but very noisy.
+warnings.filterwarnings("ignore", message=".*antlr4.error.ErrorListener.*")
+
 
 # ── LaTeX normalisation helpers ─────────────────────────────────────────────
 
@@ -78,7 +90,7 @@ def _normalise_latex(latex: str) -> str:
     return s
 
 
-def _latex_to_sympy(latex_str: str):
+def _latex_to_sympy_uncached(latex_str: str):
     """Try to convert a LaTeX string to a SymPy expression.
     Returns None on failure."""
     if not _SYMPY_AVAILABLE:
@@ -104,6 +116,11 @@ def _latex_to_sympy(latex_str: str):
         return parse_expr(clean, transformations=t)
     except Exception:
         return None
+
+
+# LaTeX parsing (ANTLR) dominates the runtime of this metric; the same strings are
+# re-compared for every model and every trial, so memoise aggressively.
+_latex_to_sympy = lru_cache(maxsize=8192)(_latex_to_sympy_uncached)
 
 
 def _sympy_equal(a_expr, b_expr) -> bool:
@@ -222,6 +239,19 @@ def extract_math_expressions(code: str) -> dict[str, list[str]]:
 
 # ── Core comparison logic ───────────────────────────────────────────────────
 
+# (generated, ground_truth, sympy_threshold, string_threshold) -> result dict.
+# Comparing the same pair of equations is extremely common (identical prompts,
+# repeated formulas across models), and simplify() is expensive.
+_COMPARISON_CACHE: dict[tuple, dict[str, Any]] = {}
+_COMPARISON_CACHE_LIMIT = 20000
+
+
+def clear_cache() -> None:
+    """Drop the memoised LaTeX parsing / equation comparison results."""
+    _latex_to_sympy.cache_clear()
+    _COMPARISON_CACHE.clear()
+
+
 def _compare_equation(
     generated: str,
     ground_truth: str,
@@ -241,30 +271,39 @@ def _compare_equation(
             "ground_truth": str,
         }
     """
+    key = (generated, ground_truth, sympy_threshold, string_threshold)
+    cached = _COMPARISON_CACHE.get(key)
+    if cached is not None:
+        return dict(cached)
+
     gen_sympy  = _latex_to_sympy(generated)
     gt_sympy   = _latex_to_sympy(ground_truth)
 
     # ── Symbolic path ──────────────────────────────────────────────────────
     if gen_sympy is not None and gt_sympy is not None:
         match = _sympy_equal(gen_sympy, gt_sympy)
-        return {
+        result = {
             "match": match,
             "method": "symbolic",
             "confidence": 1.0 if match else 0.0,
             "generated": generated,
             "ground_truth": ground_truth,
         }
+    else:
+        # ── String fallback ────────────────────────────────────────────────
+        sim = _string_similarity(generated, ground_truth)
+        result = {
+            "match": sim >= string_threshold,
+            "method": "string",
+            "confidence": sim,
+            "generated": generated,
+            "ground_truth": ground_truth,
+        }
 
-    # ── String fallback ────────────────────────────────────────────────────
-    sim = _string_similarity(generated, ground_truth)
-    match = sim >= string_threshold
-    return {
-        "match": match,
-        "method": "string",
-        "confidence": sim,
-        "generated": generated,
-        "ground_truth": ground_truth,
-    }
+    if len(_COMPARISON_CACHE) >= _COMPARISON_CACHE_LIMIT:
+        _COMPARISON_CACHE.clear()
+    _COMPARISON_CACHE[key] = result
+    return dict(result)
 
 
 def _best_match(generated_list: list[str], ground_truth: str) -> dict[str, Any]:
@@ -286,9 +325,33 @@ def _best_match(generated_list: list[str], ground_truth: str) -> dict[str, Any]:
 
 # ── Public API ──────────────────────────────────────────────────────────────
 
+def _normalise_ground_truth(ground_truth_equations: Any) -> list[str]:
+    """
+    Accept either a list of LaTeX equations or a whole problem/record dict.
+
+    Passing a problem dict used to iterate its *keys* as if they were equations,
+    which silently produced a 0.0 score (and wasted seconds per sample). Accept
+    dicts explicitly and pull the official field out of them.
+    """
+    if ground_truth_equations is None:
+        return []
+    if isinstance(ground_truth_equations, dict):
+        for key in ("ground_truth_equations", "equations", "expected_equations", "formulas"):
+            value = ground_truth_equations.get(key)
+            if value:
+                return _normalise_ground_truth(value)
+        return []
+    if isinstance(ground_truth_equations, str):
+        return [ground_truth_equations]
+    try:
+        return [str(item) for item in ground_truth_equations if item]
+    except TypeError:
+        return []
+
+
 def compute_mathematical_fidelity(
     code: str,
-    ground_truth_equations: list[str] | None = None,
+    ground_truth_equations: Any = None,
 ) -> dict[str, Any]:
     """
     Compute the Mathematical Accuracy Score (MAS) for a generated Manim script.
@@ -296,10 +359,10 @@ def compute_mathematical_fidelity(
     Args:
         code:                    Generated Python/Manim source code.
         ground_truth_equations:  List of LaTeX equation strings from the
-                                 problem spec (``problem["ground_truth_equations"]``).
-                                 If empty/None the score is computed solely from
-                                 the presence and parsability of math expressions
-                                 in the code (a 0–1 density signal).
+                                 problem spec (``problem["ground_truth_equations"]``),
+                                 or the problem dict itself. If empty/None the score
+                                 is computed solely from the presence and parsability
+                                 of math expressions in the code (a 0-1 density signal).
 
     Returns:
         {
@@ -316,6 +379,7 @@ def compute_mathematical_fidelity(
             }
         }
     """
+    ground_truth_equations = _normalise_ground_truth(ground_truth_equations)
     extracted = extract_math_expressions(code)
     all_generated = extracted["latex_strings"] + extracted["plot_lambdas"]
     n_found = len(all_generated)

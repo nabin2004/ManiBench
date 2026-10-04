@@ -50,7 +50,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_probe_healthy() -> None:
-    print("\n[1/5] Dependency probe on the current interpreter")
+    print("\n[1/6] Dependency probe on the current interpreter")
     from scripts import kaggle_run as kr
 
     probe = kr.probe_stack()
@@ -61,7 +61,7 @@ def test_probe_healthy() -> None:
 
 
 def test_probe_detects_numpy_corruption() -> None:
-    print("\n[2/5] Probe detects the 'numpy._core.umath._center' corruption")
+    print("\n[2/6] Probe detects the 'numpy._core.umath._center' corruption")
     from scripts import kaggle_run as kr
 
     shim_dir = Path(tempfile.mkdtemp(prefix="manibench_shim_"))
@@ -92,7 +92,7 @@ def test_probe_detects_numpy_corruption() -> None:
 
 
 def test_constraints_pin() -> None:
-    print("\n[3/5] pip constraints file pins the pre-installed stack")
+    print("\n[3/6] pip constraints file pins the pre-installed stack")
     from scripts import kaggle_run as kr
 
     target = Path(tempfile.mkdtemp(prefix="manibench_constraints_")) / "constraints.txt"
@@ -111,7 +111,7 @@ def test_constraints_pin() -> None:
 
 
 def test_end_to_end_pipeline() -> None:
-    print("\n[4/5] End-to-end dry-run pipeline (metrics -> tables -> figures -> zip)")
+    print("\n[4/6] End-to-end dry-run pipeline (metrics -> tables -> figures -> zip)")
     from scripts.kaggle_run import generate_figures
     from scripts.run_kaggle_benchmark import run_benchmark
     from scripts.model_catalog import catalog
@@ -175,7 +175,7 @@ def test_end_to_end_pipeline() -> None:
 
 
 def test_notebook_is_current() -> None:
-    print("\n[5/5] Kaggle launcher notebook matches its generator")
+    print("\n[5/6] Kaggle launcher notebook matches its generator")
     result = subprocess.run([sys.executable, str(ROOT / "scripts" / "build_kaggle_notebook.py"), "--check"],
                             capture_output=True, text=True, timeout=120)
     check("notebook is in sync with scripts/build_kaggle_notebook.py", result.returncode == 0,
@@ -195,12 +195,44 @@ def test_notebook_is_current() -> None:
           and bool(notebook["metadata"].get("kaggle", {}).get("isInternetEnabled")))
 
 
+def test_trio_script() -> None:
+    print("\n[6/6] Trio script: model wiring and publication suite")
+    from scripts.run_model_trio import TRIO, resolve_trio  # noqa: F401
+
+    specs = resolve_trio()
+    by_short = {s.short_name: s for s in specs}
+    check("trio resolves 3 model variants", len(specs) == 3,
+          ", ".join(s.short_name for s in specs))
+    base = by_short.get("Qwen3-8B-Base")
+    check("baseline is the Qwen3-8B foundation model",
+          base is not None and base.id == "Qwen/Qwen3-8B" and base.format == "base")
+    sft = by_short.get("AOS-Qwen3-8B-Merged")
+    check("SFT variant is the merged repo on the Qwen3-8B base",
+          sft is not None and sft.id == "nabin2004/AOS-Qwen3-8B-Merged"
+          and sft.format == "merged" and sft.base_model == "Qwen/Qwen3-8B"
+          and sft.training_method == "SFT")
+    grpo = by_short.get("qwen-Manimator-1-grpo")
+    check("GRPO variant is the LoRA adapter on the Qwen3-8B base",
+          grpo is not None and grpo.id == "nabin2004/qwen-Manimator-1-grpo"
+          and grpo.is_lora and grpo.base_model == "Qwen/Qwen3-8B")
+
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_model_trio.py"), "--help"],
+                            capture_output=True, text=True, timeout=120)
+    check("trio CLI responds to --help", result.returncode == 0
+          and "--from-json" in (result.stdout or ""))
+
+    from scripts.publication_figures import DEFAULT_STEMS
+    check("publication figure suite defines 9 figures", len(DEFAULT_STEMS) == 9,
+          f"{len(DEFAULT_STEMS)} stems: {', '.join(DEFAULT_STEMS)}")
+
+
 def main() -> int:
     print("=" * 78)
     print("  ManiBench - kaggle_run.py self-test")
     print("=" * 78)
     for test in (test_probe_healthy, test_probe_detects_numpy_corruption,
-                 test_constraints_pin, test_end_to_end_pipeline, test_notebook_is_current):
+                 test_constraints_pin, test_end_to_end_pipeline, test_notebook_is_current,
+                 test_trio_script):
         try:
             test()
         except Exception as exc:  # noqa: BLE001

@@ -114,6 +114,12 @@ help:
 	@echo "  make kaggle-selftest     Verify the runner end-to-end locally"
 	@echo "  make kaggle-notebook     Regenerate the Kaggle launcher notebook"
 	@echo ""
+	@echo "  TRIO PUBLICATION RUN (base vs SFT-merged vs GRPO adapter)"
+	@echo "  ─────────────────────────────────────────────────────────────"
+	@echo "  make trio                Benchmark the trio + full paper bundle"
+	@echo "  make trio-smoke          Offline trio pipeline test (no GPU/weights)"
+	@echo "  make trio-figures        Rebuild figures/report from a finished run"
+	@echo ""
 	@echo "  UTILITIES"
 	@echo "  ─────────────────────────────────────────────────────────────"
 	@echo "  make validate       Validate dataset JSON + evaluation code"
@@ -587,7 +593,7 @@ export DATASET_INFO_SCRIPT
 #  KAGGLE DUAL GPU (T4×2) BENCHMARK TARGETS
 # ══════════════════════════════════════════════════════════════════════════
 
-.PHONY: kaggle-list-models kaggle-dry-run kaggle-bench kaggle-run kaggle-smoke kaggle-smoke-render kaggle-selftest kaggle-notebook
+.PHONY: kaggle-list-models kaggle-dry-run kaggle-bench kaggle-run kaggle-smoke kaggle-smoke-render kaggle-selftest kaggle-notebook trio trio-smoke trio-figures
 
 ## List all models in extensible registry
 kaggle-list-models:
@@ -620,6 +626,23 @@ kaggle-selftest:
 ## Regenerate ManiBench_Kaggle_T4x2_Benchmark.ipynb from its generator
 kaggle-notebook:
 	$(PYTHON) scripts/build_kaggle_notebook.py
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  TRIO PUBLICATION RUN (base vs SFT-merged vs GRPO adapter)
+# ══════════════════════════════════════════════════════════════════════════
+
+## Base vs SFT vs GRPO with the full publication bundle (9 figures + report + LaTeX)
+trio:
+	$(PYTHON) scripts/run_model_trio.py $(if $(TRIALS),--trials $(TRIALS),) $(if $(PROBLEMS),--problems $(PROBLEMS),) $(if $(SKIP_RENDER),--skip-render,)
+
+## Offline trio pipeline test (synthetic code, no GPU, no weights)
+trio-smoke:
+	$(PYTHON) scripts/run_model_trio.py --dry-run --skip-render --problems MB-001 MB-005 --output-dir results/trio_smoke --fresh
+
+## Rebuild figures/report only from a finished trio run (no GPU needed)
+trio-figures:
+	$(PYTHON) scripts/run_model_trio.py --from-json "$(or $(RUN_JSON),results/trio_publication/benchmark_run_*.json)"
 
 
 # ══════════════════════════════════════════════════════════════════════════

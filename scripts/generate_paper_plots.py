@@ -1,164 +1,125 @@
 #!/usr/bin/env python3
 """
-ManiBench — Publication-Quality Figures Generator for Research Papers
-====================================================================
-Generates camera-ready vector PDFs and 300-DPI PNGs from benchmark outputs:
-  1. Figure 1: Syntactic Drift Tradeoff (VCER vs. Executability Scatter Plot with Pareto Frontier)
-  2. Figure 2: Model Family Performance Comparison (Grouped Bar Chart)
-  3. Figure 3: Pedagogical Coverage Dimensions Radar Chart
+ManiBench - Publication-Quality Figures Generator
+=================================================
+
+Thin compatibility CLI over the publication figure suite in
+`scripts/publication_figures.py` (single source of truth for styling and layout).
+
+    python scripts/generate_paper_plots.py --results-json results/<run>/benchmark_run_*.json \
+                                           --output-dir results/<run>/figures
+
+The legacy entry points `plot_vcer_vs_executability` and
+`plot_family_comparison` are kept so existing callers (e.g. the Kaggle runner)
+keep working; they now delegate to the shared, upgraded implementations.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
+# Allow `python scripts/generate_paper_plots.py` (sys.path[0] is scripts/, not the
+# repo root) as well as `import scripts.generate_paper_plots` from the runner.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-# Publication style configuration
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.size": 10,
-    "axes.labelsize": 11,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 9,
-    "ytick.labelsize": 9,
-    "legend.fontsize": 9,
-    "figure.titlesize": 13,
-    "figure.dpi": 300,
-    "savefig.bbox": "tight",
-})
+from scripts.publication_figures import (  # noqa: F401  (re-exported API)
+    build_contact_sheet,
+    fig02_leaderboard,
+    fig03_radar,
+    fig04_pareto,
+    fig06_domain,
+    fig09_metric_correlation,
+    model_colors,
+    per_problem_matrix,
+)
 
-FAMILY_COLORS = {
-    "qwen-manimator": "#1f77b4",  # Blue
-    "aos-qwen3": "#ff7f0e",       # Orange
-    "aos-qwen2.5": "#2ca02c",     # Green
-    "gemma": "#d62728",           # Red
-    "baseline": "#7f7f7f",        # Gray
-    "custom": "#9467bd",          # Purple
-}
-
-METHOD_MARKERS = {
-    "Base": "o",
-    "SFT": "s",
-    "DPO": "^",
-    "GRPO": "D",
-    "Custom": "v",
-}
+# Historically these two functions produced fig1/fig2; keep the names.
+plot_vcer_vs_executability = fig04_pareto
+plot_family_comparison = fig02_leaderboard
+plot_metric_radar = fig03_radar
+plot_domain_breakdown = fig06_domain
+plot_metric_correlation = fig09_metric_correlation
 
 
-def plot_vcer_vs_executability(model_summaries: Dict[str, Dict[str, Any]], out_dir: Path) -> None:
-    """Figure 1: VCER vs Executability Scatter Plot."""
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
-
-    for name, s in model_summaries.items():
-        fam = s.get("family", "custom")
-        color = FAMILY_COLORS.get(fam, "#333333")
-        method = s.get("training_method", "SFT")
-        marker = METHOD_MARKERS.get(method, "o")
-
-        x = s.get("vcer_pct", s.get("vcer_mean", 0.0) * 100.0)
-        y = s.get("pass_rate_pct", s.get("executability_mean", 0.0) * 100.0)
-
-        ax.scatter(x, y, color=color, marker=marker, s=80, alpha=0.85, edgecolors="k", linewidth=0.6, zorder=4)
-        ax.annotate(
-            name.replace("AOS-", "").replace("nabin2004/", "")[:18],
-            (x, y),
-            fontsize=7,
-            xytext=(4, 2),
-            textcoords="offset points",
-            alpha=0.85,
-        )
-
-    ax.set_xlabel("Version-Conflict Error Rate (VCER) % [Lower is Better] →")
-    ax.set_ylabel("Pass@1 Executability % [Higher is Better] ↑")
-    ax.set_title("Syntactic Drift vs. Executability in Manim Code Generation", fontweight="bold")
-    ax.grid(True, linestyle="--", alpha=0.4, zorder=0)
-
-    # Highlight optimal region (top-left)
-    ax.axvspan(0, 15, ymin=0.7, ymax=1.0, color="#2ca02c", alpha=0.08, zorder=1)
-    ax.text(2, 92, "Optimal Frontier\n(High Exec, Low VCER)", color="#1b5e20", fontsize=8, style="italic")
-
-    # Legend for families
-    from matplotlib.lines import Line2D
-    family_handles = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=col, markersize=8, label=fam.upper())
-        for fam, col in FAMILY_COLORS.items() if any(s.get("family") == fam for s in model_summaries.values())
-    ]
-    ax.legend(handles=family_handles, loc="lower right", framealpha=0.9)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_dir / "fig1_vcer_vs_executability.pdf")
-    fig.savefig(out_dir / "fig1_vcer_vs_executability.png")
-    plt.close(fig)
-
-
-def plot_family_comparison(model_summaries: Dict[str, Dict[str, Any]], out_dir: Path) -> None:
-    """Figure 2: Clustered Bar Chart of Family Aggregates."""
-    family_groups: Dict[str, List[Dict[str, Any]]] = {}
-    for s in model_summaries.values():
-        family_groups.setdefault(s.get("family", "custom"), []).append(s)
-
-    families = list(family_groups.keys())
-    if not families:
-        return
-
-    exec_means = [np.mean([s["pass_rate_pct"] for s in family_groups[f]]) for f in families]
-    vcer_means = [np.mean([s["vcer_pct"] for s in family_groups[f]]) for f in families]
-    align_means = [np.mean([s["alignment_mean"] * 100.0 for s in family_groups[f]]) for f in families]
-    cov_means = [np.mean([s["coverage_mean"] * 100.0 for s in family_groups[f]]) for f in families]
-
-    x = np.arange(len(families))
-    width = 0.20
-
-    fig, ax = plt.subplots(figsize=(7.2, 4.0))
-    rects1 = ax.bar(x - 1.5 * width, exec_means, width, label="Pass@1 (%)", color="#1f77b4")
-    rects2 = ax.bar(x - 0.5 * width, vcer_means, width, label="VCER (%)", color="#d62728")
-    rects3 = ax.bar(x + 0.5 * width, align_means, width, label="Alignment (x100)", color="#2ca02c")
-    rects4 = ax.bar(x + 1.5 * width, cov_means, width, label="Coverage (x100)", color="#ff7f0e")
-
-    ax.set_ylabel("Metric Score (%)")
-    ax.set_title("Cross-Family Performance Breakdown on ManiBench", fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels([f.upper() for f in families])
-    ax.legend(loc="upper right", framealpha=0.9)
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-
-    fig.savefig(out_dir / "fig2_family_comparison.pdf")
-    fig.savefig(out_dir / "fig2_family_comparison.png")
-    plt.close(fig)
-
-
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Generate ManiBench publication figures")
-    parser.add_argument("--results-json", type=str, required=True, help="Path to benchmark_run_*.json")
-    parser.add_argument("--output-dir", type=str, default="figures", help="Output directory for figures")
+    parser.add_argument("--results-json", required=True, help="Path to benchmark_run_*.json")
+    parser.add_argument("--output-dir", default="figures", help="Output directory for figures")
+    parser.add_argument("--legacy-two-figures", action="store_true",
+                        help="Only emit fig04 (drift/pareto) and fig02 (leaderboard)")
     args = parser.parse_args()
 
     json_path = Path(args.results_json)
     if not json_path.exists():
-        print(f"ERROR: Results file not found at: {json_path}")
-        return
+        print(f"ERROR: results file not found at: {json_path}")
+        return 1
 
-    with open(json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    summaries = data.get("model_summaries", {})
-    if not summaries:
-        print("No model_summaries found in JSON.")
-        return
-
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summaries: Dict[str, Dict[str, Any]] = data.get("model_summaries", {})
+    records: List[Dict[str, Any]] = data.get("detailed_records", [])
+    metadata = data.get("metadata", {})
     out = Path(args.output_dir)
-    plot_vcer_vs_executability(summaries, out)
-    plot_family_comparison(summaries, out)
-    print(f"Publication figures successfully saved to: {out.resolve()}")
+    out.mkdir(parents=True, exist_ok=True)
+
+    formatter = None
+    if not summaries and records:
+        # Tolerate archives that only carry per-trial records (e.g. a checkpoint
+        # export) by deriving the model-level summaries here.
+        from scripts.paper_formatter import PaperFormatter
+        formatter = PaperFormatter(raw_records=records, metadata=metadata)
+        summaries = formatter.model_summaries
+
+    if not summaries:
+        print("No model summaries could be derived from the JSON - nothing to plot.")
+        return 1
+
+    written: List[Path] = []
+    if args.legacy_two_figures:
+        written += fig04_pareto(summaries, out)
+        written += fig02_leaderboard(summaries, out)
+    else:
+        from scripts.publication_figures import build_all
+        from scripts.publication_report import paired_comparisons
+
+        # Pick a baseline for the significance figure: an explicit baseline family
+        # first, otherwise the weakest model by Pass@1.
+        baseline = None
+        for name, summary in summaries.items():
+            if str(summary.get("family", "")).lower() == "baseline" or \
+               str(summary.get("training_method", "")).lower() == "base":
+                baseline = name
+                break
+        if baseline is None and summaries:
+            baseline = min(summaries, key=lambda n: float(summaries[n].get("pass_rate_pct") or 0.0))
+        comparisons = paired_comparisons(records, baseline=baseline) if baseline else []
+
+        # `build_all` writes into <base>/figures - so a caller passing
+        # ".../figures" gets ".../figures", and a caller passing the run directory
+        # gets "<run>/figures".
+        base = out.parent if out.name == "figures" else out
+        written = build_all(
+            output_dir=base,
+            summaries=summaries,
+            records=records,
+            domain_summaries=getattr(formatter, "domain_summaries", None),
+            error_taxonomy=getattr(formatter, "error_taxonomy", None),
+            comparisons=comparisons,
+            baseline=baseline,
+            meta={"trials": metadata.get("trials", 1),
+                  "strategy": metadata.get("strategy", "zero_shot"),
+                  "skip_render": metadata.get("skip_render", False)},
+        )
+
+    target = written[0].parent if written else out
+    print(f"{len(written)} figure file(s) written to: {target.resolve()}")
+    return 0 if written else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

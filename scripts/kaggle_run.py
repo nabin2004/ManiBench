@@ -95,9 +95,19 @@ PAPER_MODELS = [
 ]
 SMOKE_PROBLEMS = ["MB-001", "MB-005"]
 
+# Base / SFT-merged / GRPO-adapter trio (see scripts/run_model_trio.py for the
+# full publication bundle: 9 figures, LaTeX tables, narrative report, zip).
+TRIO_MODELS = [
+    "Qwen/Qwen3-8B",
+    "nabin2004/AOS-Qwen3-8B-Merged",
+    "nabin2004/qwen-Manimator-1-grpo",
+]
+
 PRESETS: Dict[str, Dict[str, Any]] = {
     # Full publication run: the 8 headline models x all 12 tasks, rendered.
     "paper": dict(models=PAPER_MODELS, all_problems=True, trials=1, skip_render=False),
+    # Same backbone, three checkpoints: untuned base vs SFT-merged vs GRPO adapter.
+    "trio": dict(models=TRIO_MODELS, all_problems=True, trials=1, skip_render=False),
     # Everything in the registry (merged + LoRA, no GGUF) - long, multi-session.
     "full": dict(all_models=True, all_problems=True, trials=1, skip_render=False),
     # Fast single-model sanity check with rendering disabled.
@@ -582,7 +592,21 @@ def hf_preflight(specs: List[Any], args: argparse.Namespace) -> Tuple[List[Any],
 # Phase 7/8 - figures, bundle, manifest
 # ═══════════════════════════════════════════════════════════════════════════
 
-def generate_figures(summaries: Dict[str, Any], output_dir: Path) -> List[str]:
+def generate_figures(
+    summaries: Dict[str, Any],
+    output_dir: Path,
+    records: Optional[List[Dict[str, Any]]] = None,
+    formatter: Any = None,
+    basic: bool = False,
+) -> List[str]:
+    """
+    Publication figures (Phase 7).
+
+    Default: the full publication suite - methodology diagram, leaderboard, radar,
+    per-task heatmaps, domain breakdown, failure taxonomy, significance forest,
+    metric correlations and a contact sheet (see scripts/publication_figures.py).
+    `basic=True` keeps only the two legacy figures (fastest smoke runs).
+    """
     section("Phase 7/8 - Publication Figures (300 DPI)")
     if not summaries:
         warn("No model summaries available - skipping figure generation.")
@@ -591,12 +615,36 @@ def generate_figures(summaries: Dict[str, Any], output_dir: Path) -> List[str]:
     figures_dir = output_dir / "figures"
     produced: List[str] = []
     try:
-        from scripts.generate_paper_plots import (
-            plot_family_comparison,
-            plot_vcer_vs_executability,
-        )
-        plot_vcer_vs_executability(summaries, figures_dir)
-        plot_family_comparison(summaries, figures_dir)
+        if basic:
+            from scripts.generate_paper_plots import plot_family_comparison, plot_vcer_vs_executability
+            plot_vcer_vs_executability(summaries, figures_dir)
+            plot_family_comparison(summaries, figures_dir)
+        else:
+            from scripts.publication_figures import build_all
+            from scripts.publication_report import paired_comparisons
+
+            baseline = None
+            for name, summary in summaries.items():
+                if str(summary.get("family", "")).lower() == "baseline" or \
+                   str(summary.get("training_method", "")).lower() == "base":
+                    baseline = name
+                    break
+            if baseline is None:
+                baseline = min(summaries, key=lambda n: float(summaries[n].get("pass_rate_pct") or 0.0))
+            comparisons = paired_comparisons(records or [], baseline=baseline) if records else []
+
+            build_all(
+                output_dir=output_dir,
+                summaries=summaries,
+                records=records or [],
+                domain_summaries=getattr(formatter, "domain_summaries", None),
+                error_taxonomy=getattr(formatter, "error_taxonomy", None),
+                comparisons=comparisons,
+                baseline=baseline,
+                meta={"trials": getattr(formatter, "metadata", {}).get("trials", 1)
+                      if formatter else 1},
+            )
+
         produced = sorted(str(p) for p in figures_dir.glob("*") if p.is_file())
         for path in produced:
             log(f"  {path}")
@@ -650,10 +698,14 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Presets:\n"
             "  paper        8 headline models x 12 tasks, rendered (default)\n"
+            "  trio         base vs SFT-merged vs GRPO-adapter on Qwen3-8B\n"
             "  full         every non-GGUF model in the registry x 12 tasks\n"
             "  quick        1 baseline model x 2 tasks, no rendering\n"
             "  smoke        synthetic code, no weights, no rendering (offline)\n"
             "  smoke-render synthetic code with real Manim CE rendering\n"
+            "\n"
+            "For the extended publication bundle (methodology diagram, radar, heatmaps,\n"
+            "forest plot, narrative report) use: python scripts/run_model_trio.py\n"
         ),
     )
     parser.add_argument("--preset", choices=sorted(PRESETS), default="paper",
@@ -682,6 +734,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="DINOv2+DTW and SSIM similarity against reference clips")
     parser.add_argument("--with-vision", action="store_true",
                         help="Install OpenCV/Pillow for visual metrics")
+    parser.add_argument("--basic-figures", action="store_true",
+                        help="Only the two legacy figures instead of the full publication suite")
     parser.add_argument("--dry-run", action="store_true",
                         help="Synthetic code generation (no model weights needed)")
 
@@ -872,7 +926,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     # ── Phase 7: figures ───────────────────────────────────────────────────
-    figures = generate_figures(result.get("model_summaries", {}), output_dir)
+    figures = generate_figures(
+        result.get("model_summaries", {}),
+        output_dir,
+        records=result.get("records"),
+        formatter=result.get("formatter"),
+        basic=args.basic_figures,
+    )
 
     # ── Phase 8: bundle + manifest ─────────────────────────────────────────
     zip_path = None

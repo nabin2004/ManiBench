@@ -24,8 +24,15 @@ def describe_hardware(hw: Optional[Dict[str, Any]]) -> str:
         return "Kaggle GPU (accelerator: nvidiaTeslaT4 x2) or local CPU/GPU host"
     devices = hw.get("devices") or []
     if devices and hw.get("cuda_available"):
-        names = ", ".join(f"{d['name']} ({d.get('vram_gb', '?')}GB)" for d in devices)
-        return f"{len(devices)}x {names} - {hw.get('total_vram_gb', '?')}GB aggregate VRAM"
+        names = [str(d.get("name", "GPU")) for d in devices]
+        vrams = [d.get("vram_gb") for d in devices]
+        if len(set(names)) == 1 and len(devices) > 1:
+            per_gpu = f" ({vrams[0]}GB each)" if vrams and vrams[0] else ""
+            text = f"{len(devices)}x {names[0]}{per_gpu}"
+        else:
+            text = ", ".join(f"{n} ({v}GB)" for n, v in zip(names, vrams))
+        total = hw.get("total_vram_gb")
+        return f"{text} - {total}GB aggregate VRAM" if total else text
     return "CPU (no CUDA device detected)"
 
 
@@ -226,7 +233,7 @@ class PaperFormatter:
             r"\small",
             r"\caption{\textbf{ManiBench Benchmark Results across Manim-Specialized and Baseline LLMs.}",
             r"Pass@1: Manim CE headless compilation. VCER: Version-Conflict Error Rate (lower is better).",
-            r"MAS: Mathematical Accuracy Score. CMI: Code Maintainability Index. CAR: Constraint Adherence Rate.",
+            r"MAS: Mathematical annotation score (LaTeX math density; symbolic match when reference equations exist). CMI: Code Maintainability Index. CAR: Constraint Adherence Rate.",
             r"Alignment: Visual event detection. Coverage: Pedagogical element density across 4 dimensions.",
             r"Bold indicates best performer; underline indicates runner-up.}",
             r"\label{tab:main_manibench_results}",
@@ -530,6 +537,7 @@ class PaperFormatter:
             "### Metric Definitions for Research Reporting",
             "- **Pass@1 (Executability):** Strict Manim Community Edition (CE) render pass rate with headless rendering.",
             "- **VCER (Version-Conflict Error Rate):** Percentage of code lines hallucinating ManimGL / 3Blue1Brown fork APIs.",
+            "- **MAS (Mathematical Annotation Score):** Density of LaTeX math expressions (`MathTex`/`Tex`/plotted lambdas); symbolic equivalence against reference equations is used when a task ships `ground_truth_equations`.",
             "- **Visual Alignment:** Event detection score against required visual landmarks.",
             "- **Pedagogical Coverage:** Density of math formulas, color mappings, trackers, and scene progression.",
             "",
