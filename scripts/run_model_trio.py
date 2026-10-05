@@ -126,6 +126,47 @@ def resolve_trio(registry: Optional[ModelCatalog] = None) -> List[ModelSpec]:
     return specs
 
 
+def select_models(specs: List[ModelSpec], only: Optional[Sequence[str]]) -> List[ModelSpec]:
+    """
+    Restrict the trio to the requested variants.
+
+    Accepts a catalog short name, a Hugging Face repo id, or an unambiguous
+    case-insensitive substring (e.g. `--only grpo`). Matching is always against the
+    three trio variants, never the whole registry.
+    """
+    if not only:
+        return specs
+
+    selected: List[ModelSpec] = []
+    for wanted in only:
+        needle = wanted.strip().lower()
+        exact = [s for s in specs if s.short_name.lower() == needle or s.id.lower() == needle]
+        matches = exact or [s for s in specs
+                            if needle in s.short_name.lower() or needle in s.id.lower()]
+        if not matches:
+            raise SystemExit(
+                "[FATAL] --only '" + wanted + "' matched none of: "
+                + ", ".join(f"{s.short_name} ({s.id})" for s in specs))
+        if len(matches) > 1 and not exact:
+            raise SystemExit(
+                "[FATAL] --only '" + wanted + "' is ambiguous; candidates: "
+                + ", ".join(s.short_name for s in matches))
+        for match in matches:
+            if match not in selected:
+                selected.append(match)
+    return selected
+
+
+def _precision_label(precision_by_model: Dict[str, str], requested: str) -> str:
+    """Human-readable provenance string for the weight precision actually used."""
+    values = {v for v in precision_by_model.values() if v}
+    if len(values) == 1:
+        return f"{values.pop()} (all models)"
+    if values:
+        return "mixed: " + ", ".join(f"{k}={v}" for k, v in sorted(precision_by_model.items()))
+    return f"unknown (requested {requested})"
+
+
 def load_problems(wanted: Optional[Sequence[str]]) -> List[Dict[str, Any]]:
     if not DATASET_PATH.exists():
         raise SystemExit(f"[FATAL] dataset not found: {DATASET_PATH}")
@@ -150,6 +191,101 @@ def preflight(specs: List[ModelSpec], skip: bool) -> List[ModelSpec]:
         print(f"  [warn] preflight unavailable ({type(exc).__name__}: {exc}); continuing")
         return specs
     return usable or specs
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Weight precision (one uniform setting for every variant)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def ensure_runtime_deps(no_install: bool, need_quant: bool, need_peft: bool) -> None:
+    """
+    Make sure the packages this run needs are importable.
+
+    `load_in_4bit=True` needs accelerate + bitsandbytes; LoRA adapters need peft.
+    Both are installed under the NumPy constraints unless --no-install is given.
+    """
+    import importlib.util
+
+    missing: List[str] = []
+    if need_quant:
+        missing += [n for n in ("accelerate", "bitsandbytes") if importlib.util.find_spec(n) is None]
+    if need_peft:
+        missing += [n for n in ("peft",) if importlib.util.find_spec(n) is None]
+    if not missing:
+        return
+    if no_install:
+        print(f"  [warn] missing dependencies: {', '.join(missing)} (--no-install)")
+        return
+
+    print(f"  [deps] installing: {', '.join(missing)}")
+    try:
+        constraints = ROOT_DIR / "manibench_constraints.txt"
+        from scripts.kaggle_run import pip_install
+        pip_install(missing, constraints=constraints if constraints.exists() else None, quiet=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] pip install failed: {type(exc).__name__}: {exc}")
+
+
+def check_adapter_runtime(specs: Sequence[ModelSpec], dry_run: bool) -> None:
+    """
+    Fail fast when LoRA adapters cannot be attached.
+
+    A missing/unimportable PEFT or a stale optional backend (e.g. torchao 0.10.0
+    against a PEFT that needs >= 0.16.0) otherwise surfaces only when the adapter is
+    loaded - potentially hours into a run. Checking up front costs seconds.
+    """
+    if dry_run or not any(spec.is_lora for spec in specs):
+        return
+    from scripts.run_kaggle_benchmark import validate_adapter_runtime
+
+    status = validate_adapter_runtime()
+    if not status["ok"]:
+        adapters = ", ".join(s.short_name for s in specs if s.is_lora)
+        raise SystemExit(
+            f"[FATAL] LoRA adapter support is unavailable: {status['error']}\n"
+            f"          Adapter model(s) in this run: {adapters}\n"
+            f"          Fix with `pip install -U peft` (or `pip install -U torchao` when the "
+            f"error names torchao), or exclude them with --only."
+        )
+    note = f"peft {status['peft']}"
+    if status["torchao"]:
+        note += f", torchao {status['torchao']}"
+    if status["neutralised"]:
+        note += f" -> ignoring unusable probe(s): {', '.join(status['neutralised'])}"
+    print(f"  adapter runtime: OK - {note}")
+
+
+def check_precision_available(precision: str, allow_fallback: bool, dry_run: bool) -> None:
+    """
+    Fail fast (before loading 30+ GB of weights) when the requested precision is
+    impossible, so a run never silently mixes precisions across variants.
+    """
+    if dry_run or precision == "auto":
+        return
+    if precision == "fp16":
+        print("  precision: fp16 (no quantization)")
+        return
+
+    try:
+        from scripts.run_kaggle_benchmark import KaggleInferenceEngine
+        status = KaggleInferenceEngine.quantization_ready()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [warn] could not check quantization support: {exc}")
+        return
+
+    label = "4-bit NF4"
+    if status["ready"]:
+        print(f"  precision: {label} - CUDA + accelerate + bitsandbytes detected")
+        return
+
+    detail = "; ".join(status["reasons"])
+    message = (f"{label} was requested for all models but is unavailable: {detail}.\n"
+               f"          Fix with: pip install accelerate bitsandbytes  (and attach a CUDA GPU),\n"
+               f"          or re-run with --precision fp16 (or --allow-quant-fallback to continue anyway).")
+    if allow_fallback:
+        print(f"  [warn] {message}")
+        return
+    raise SystemExit(f"[FATAL] {message}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -257,6 +393,8 @@ def build_publication_package(
         "baseline": baseline_short,
         "config": {k: meta.get(k) for k in
                    ("trials", "strategy", "skip_render", "max_new_tokens", "timeout", "seed")},
+        "weight_precision": meta.get("weight_precision"),
+        "weight_precision_by_model": meta.get("weight_precision_by_model"),
         "counts": {"records": len(records),
                    "tasks": len({r.get("problem_id") for r in records}),
                    "models_with_results": len(formatter.model_summaries)},
@@ -304,14 +442,29 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Problem ids to evaluate (default: all 12)")
     parser.add_argument("--trials", type=int, default=1,
                         help="Trials per task (use 3+ for publishable significance tests)")
+    parser.add_argument("--only", nargs="+", default=None, metavar="MODEL",
+                        help="Run only these trio variants (short name, repo id, or unique "
+                             "substring - e.g. --only grpo). Combines with the checkpoint, so "
+                             "the other variants' finished results stay in the tables.")
     parser.add_argument("--strategy", default="zero_shot",
                         choices=["zero_shot", "version_aware", "cot"])
     parser.add_argument("--skip-render", action="store_true",
                         help="Static metrics only (much faster, no Manim execution)")
-    parser.add_argument("--load-in-4bit", action="store_true", help="NF4 quantization")
+    parser.add_argument("--precision", choices=["fp16", "4bit", "auto"], default="fp16",
+                        help="Weight precision applied to ALL three variants (default: fp16, "
+                             "unquantized). Keeping it uniform is what makes the comparison "
+                             "interpretable; use 4bit only when VRAM-constrained.")
+    parser.add_argument("--allow-quant-fallback", action="store_true",
+                        help="With --precision 4bit: continue in FP16 if NF4 is unavailable "
+                             "instead of aborting (results are then NOT precision-matched)")
+    parser.add_argument("--no-install", action="store_true",
+                        help="Do not pip-install missing dependencies (accelerate/bitsandbytes/etc.)")
     parser.add_argument("--max-new-tokens", type=int, default=4096)
     parser.add_argument("--timeout", type=int, default=60, help="Per-render timeout (seconds)")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--session-hours", type=float, default=12.0,
+                        help="Warn when the projected generation time exceeds this Kaggle "
+                             "session budget (0 disables)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Synthetic code engine - full pipeline without model weights")
     parser.add_argument("--baseline", default="Qwen3-8B-Base",
@@ -338,6 +491,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("=" * 78, flush=True)
 
     specs = resolve_trio()
+
+    # ── Optional subset: --only <variant> ──────────────────────────────────
+    if args.only:
+        specs = select_models(specs, args.only)
+        print(f"  Restricting this run to {len(specs)} variant(s): "
+              + ", ".join(s.short_name for s in specs))
 
     # ── Rebuild-only mode ──────────────────────────────────────────────────
     if args.from_json:
@@ -379,6 +538,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"  Trials   : {args.trials}   Strategy: {args.strategy}   "
           f"Render: {'off' if args.skip_render else 'on'}")
 
+    # ── Runtime dependencies + fail-fast capability checks ─────────────────
+    load_in_4bit = (args.precision == "4bit")
+    if not args.dry_run:
+        ensure_runtime_deps(args.no_install,
+                            need_quant=load_in_4bit,
+                            need_peft=any(s.is_lora for s in specs))
+    check_precision_available(args.precision, args.allow_quant_fallback, args.dry_run)
+    check_adapter_runtime(specs, args.dry_run)
+
     if args.fresh:
         stale_files = list(output_dir.glob("checkpoint_records.jsonl"))
         stale_files += list(output_dir.glob("benchmark_run_*.json"))
@@ -405,7 +573,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         skip_render=args.skip_render,
         timeout=args.timeout,
         dry_run=args.dry_run,
-        load_in_4bit=args.load_in_4bit,
+        load_in_4bit=load_in_4bit,
+        strict_quantization=not args.allow_quant_fallback,
+        session_hours=args.session_hours,
         compute_visual_sim=False,
         max_new_tokens=args.max_new_tokens,
         seed=args.seed,
@@ -418,6 +588,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("\n  [WARNING] no evaluation records were produced - the report will state this.\n")
 
     hardware = result.get("hardware") or {}
+    precision_by_model = {
+        name: status.get("weight_precision")
+        for name, status in (result.get("model_statuses") or {}).items()
+        if status.get("weight_precision")
+    }
     meta: Dict[str, Any] = {
         "benchmark": "ManiBench (pilot v1.0)",
         "timestamp": result.get("metadata", {}).get("timestamp", ""),
@@ -427,6 +602,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "max_new_tokens": args.max_new_tokens,
         "timeout": args.timeout,
         "seed": args.seed,
+        "requested_precision": args.precision,
+        "weight_precision": ((result.get("metadata", {}) or {}).get("weight_precision")
+                             or _precision_label(precision_by_model, args.precision)),
+        "weight_precision_by_model": precision_by_model,
         "n_problems": len({r.get("problem_id") for r in records}) or len(problems),
         "hardware": hardware,
         "hardware_text": describe_hardware(hardware),

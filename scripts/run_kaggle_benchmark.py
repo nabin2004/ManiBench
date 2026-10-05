@@ -28,7 +28,7 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -137,6 +137,35 @@ def safe_metric(name: str, fn, *args, default: Any = None, **kwargs) -> Any:
         return default
 
 
+# Accepted result keys per metric, canonical first.
+#
+# This mapping exists because three metrics silently reported their fallback defaults
+# for every run: the metric modules return `mas_score` / `cmi_score` / `car_score`
+# while this runner read `mathematical_fidelity` / `code_maintainability_index` /
+# `constraint_adherence_rate`, so MAS was always 0.0, CMI always 70.0 and CAR always
+# 0.80. All lookups go through `metric_value()`, and the mapping is asserted against
+# the real metric outputs in scripts/selftest_kaggle_run.py.
+METRIC_RESULT_KEYS: Dict[str, Tuple[str, ...]] = {
+    "executability": ("executability",),
+    "version_conflicts": ("vcer", "version_conflict_rate", "conflict_rate"),
+    "alignment": ("alignment_score",),
+    "coverage": ("coverage_score",),
+    "mathematical_fidelity": ("mas_score", "mathematical_fidelity", "mas"),
+    "code_quality": ("cmi_score", "code_maintainability_index", "cmi"),
+    "constraint_adherence": ("car_score", "constraint_adherence_rate", "car"),
+}
+
+
+def metric_value(result: Any, metric: str, default: Any = 0.0) -> Any:
+    """Extract a metric score via the canonical key list, defaulting only if absent."""
+    if isinstance(result, dict):
+        for key in METRIC_RESULT_KEYS.get(metric, ()):
+            value = result.get(key)
+            if value is not None:
+                return value
+    return default
+
+
 RECORD_TEMPLATE: Dict[str, Any] = {
     "model_id": None,
     "short_name": None,
@@ -164,7 +193,131 @@ RECORD_TEMPLATE: Dict[str, Any] = {
     "render_duration_s": 0.0,
     "code_len_lines": 0,
     "code_path": None,
+    "weight_precision": None,
 }
+
+
+def neutralise_incompatible_peft_probes() -> List[str]:
+    """
+    Stop PEFT's optional-dependency probes from raising on stale packages.
+
+    PEFT inspects optional acceleration backends (torchao, aqlm, eetq, ...) while
+    building a LoRA model. `is_torchao_available()` *raises* when the installed
+    torchao is older than the version PEFT supports:
+
+        ImportError: Found an incompatible version of torchao. Found version 0.10.0,
+                     but only versions above 0.16.0 are supported
+
+    We never request torchao quantization, so an unusable torchao should simply be
+    treated as "not available". This wraps every `peft.import_utils.is_*_available`
+    probe so an exception means False, and re-patches the lora dispatcher module
+    that imported the probe by name.
+
+    Returns the list of probe names that had to be neutralised.
+    """
+    import importlib
+    import importlib.util
+
+    neutralised: List[str] = []
+    if importlib.util.find_spec("peft") is None:
+        return neutralised
+
+    try:
+        import peft.import_utils as peft_import_utils
+    except Exception:  # noqa: BLE001 - peft missing or unimportable
+        return neutralised
+
+    def make_probe(name: str):
+        original = getattr(peft_import_utils, name)
+
+        def probe(*args, **kwargs):
+            try:
+                return bool(original(*args, **kwargs))
+            except Exception as exc:  # noqa: BLE001
+                if name not in neutralised:
+                    neutralised.append(f"{name}: {type(exc).__name__}")
+                return False
+
+        probe.__name__ = name
+        return probe
+
+    for name in dir(peft_import_utils):
+        if not (name.startswith("is_") and name.endswith("_available")):
+            continue
+        probe = getattr(peft_import_utils, name)
+        if not callable(probe):
+            continue
+        try:
+            if probe():                      # healthy -> leave it alone
+                continue
+        except Exception as exc:             # noqa: BLE001 - this is the bug we fix
+            neutralised.append(f"{name}: {type(exc).__name__}")
+        setattr(peft_import_utils, name, make_probe(name))
+
+    # `peft.tuners.lora.torchao` (and friends) bind the probe with `from ... import`,
+    # so the module-level name must be replaced too. Import it *after* patching so a
+    # fresh import picks up the safe version.
+    for module_name in ("peft.tuners.lora.torchao", "peft.tuners.lora.aqlm",
+                        "peft.tuners.lora.eetq", "peft.tuners.lora.awq"):
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:  # noqa: BLE001
+            continue
+        for attr in dir(module):
+            if attr.startswith("is_") and attr.endswith("_available"):
+                current = getattr(module, attr)
+                if not callable(current):
+                    continue
+                try:
+                    if current():
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass
+                setattr(module, attr, getattr(peft_import_utils, attr, make_probe(attr)))
+
+    return neutralised
+
+
+def peft_available() -> bool:
+    """True when PEFT can be imported (required for LoRA adapter models)."""
+    import importlib.util
+    return importlib.util.find_spec("peft") is not None
+
+
+def validate_adapter_runtime() -> Dict[str, Any]:
+    """
+    Cheap pre-run check that LoRA adapters can actually be attached.
+
+    Imports PEFT, applies the optional-backend probe shim, and reports the versions
+    involved - without downloading any weights. This turns a failure that would
+    otherwise surface hours into a run into an immediate, actionable message.
+    """
+    result: Dict[str, Any] = {"ok": False, "peft": None, "torchao": None,
+                              "neutralised": [], "error": None}
+    import importlib.util
+
+    if not peft_available():
+        result["error"] = ("'peft' is not installed - LoRA adapter models cannot be loaded. "
+                           "Install it with `pip install peft`.")
+        return result
+
+    try:
+        import peft  # noqa: F401
+        result["peft"] = getattr(peft, "__version__", "unknown")
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = f"'peft' failed to import: {type(exc).__name__}: {exc}"
+        return result
+
+    if importlib.util.find_spec("torchao") is not None:
+        try:
+            import torchao
+            result["torchao"] = getattr(torchao, "__version__", "unknown")
+        except Exception:  # noqa: BLE001
+            result["torchao"] = "unimportable"
+
+    result["neutralised"] = neutralise_incompatible_peft_probes()
+    result["ok"] = True
+    return result
 
 
 def canonical_record(seed: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -210,6 +363,21 @@ def record_key(record: Dict[str, Any]) -> str:
     return "|".join(
         str(record.get(k, "")) for k in ("short_name", "problem_id", "trial", "strategy")
     )
+
+
+def _summarise_precision(model_statuses: Dict[str, Dict[str, Any]]) -> str:
+    """Collapse per-model weight precision into one provenance string."""
+    precisions = {
+        name: status.get("weight_precision")
+        for name, status in (model_statuses or {}).items()
+        if status.get("weight_precision")
+    }
+    if not precisions:
+        return "unknown"
+    distinct = set(precisions.values())
+    if len(distinct) == 1:
+        return f"{distinct.pop()} (all models)"
+    return "mixed: " + ", ".join(f"{name}={value}" for name, value in sorted(precisions.items()))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -279,13 +447,76 @@ class KaggleInferenceEngine:
       - Clean VRAM teardown between models
     """
 
-    def __init__(self, spec: ModelSpec, load_in_4bit: bool = False, device_map: str = "auto"):
+    def __init__(
+        self,
+        spec: ModelSpec,
+        load_in_4bit: bool = False,
+        device_map: str = "auto",
+        strict_quantization: bool = True,
+    ):
         self.spec = spec
-        self.load_in_4bit = load_in_4bit or (spec.recommended_quant == "4bit")
+        self.load_in_4bit = bool(load_in_4bit or (spec.recommended_quant == "4bit"))
         self.device_map = device_map
+        # When True, a requested 4-bit load that cannot be honoured raises instead of
+        # silently running in FP16 - mixing precisions would confound the comparison.
+        self.strict_quantization = strict_quantization
+        self.weight_precision: Optional[str] = None
         self.model = None
         self.tokenizer = None
         self._load()
+
+    # ── Quantization feasibility ───────────────────────────────────────────
+    @staticmethod
+    def quantization_ready() -> Dict[str, Any]:
+        """Report whether NF4 4-bit loading is possible in this environment."""
+        import importlib.util
+
+        import torch
+
+        has_accelerate = importlib.util.find_spec("accelerate") is not None
+        has_bitsandbytes = importlib.util.find_spec("bitsandbytes") is not None
+        cuda = bool(torch.cuda.is_available())
+        reasons = []
+        if not cuda:
+            reasons.append("no CUDA device visible")
+        if not has_accelerate:
+            reasons.append("'accelerate' is not installed")
+        if not has_bitsandbytes:
+            reasons.append("'bitsandbytes' is not installed")
+        return {
+            "ready": not reasons,
+            "cuda": cuda,
+            "accelerate": has_accelerate,
+            "bitsandbytes": has_bitsandbytes,
+            "reasons": reasons,
+        }
+
+    def _resolve_quantization(self, torch, has_accelerate: bool) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """
+        Decide the effective precision for this model.
+
+        Returns (use_4bit, quant_error_dict). Raises RuntimeError in strict mode when
+        4-bit was requested but is not achievable.
+        """
+        if not self.load_in_4bit:
+            return False, None
+
+        status = self.quantization_ready()
+        if status["ready"] and has_accelerate:
+            return True, None
+
+        detail = "; ".join(status["reasons"]) or "unknown reason"
+        message = (
+            f"4-bit NF4 quantization was requested for '{self.spec.short_name}' but cannot be "
+            f"enabled here: {detail}. Install the missing pieces with "
+            f"`pip install accelerate bitsandbytes` (and ensure a CUDA GPU is attached), "
+            f"or run with --precision fp16."
+        )
+        if self.strict_quantization:
+            raise RuntimeError(message)
+        print(f"               WARNING: {message}")
+        print("               Continuing in 16-bit (precision differs from the requested mode).")
+        return False, {"reason": detail}
 
     def _load(self) -> None:
         import torch
@@ -317,55 +548,78 @@ class KaggleInferenceEngine:
         # which used to abort every single model load. Degrade gracefully instead.
         import importlib.util
         has_accelerate = importlib.util.find_spec("accelerate") is not None
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        cuda = torch.cuda.is_available()
+        base_dtype = torch.float16 if cuda else torch.float32
         model_kwargs: Dict[str, Any] = {"trust_remote_code": True}
         if has_accelerate:
             model_kwargs["device_map"] = self.device_map
         else:
             print("               [info] 'accelerate' is not installed - loading on a single "
                   "device without device_map (pip install accelerate for T4x2 sharding).")
-        model_kwargs[self._dtype_kwarg_name()] = dtype
+        model_kwargs[self._dtype_kwarg_name()] = base_dtype
 
-        if self.load_in_4bit:
-            if not has_accelerate:
-                print("               WARNING: 4-bit quantization needs 'accelerate'; "
-                      "continuing in 16-bit.")
-            else:
-                try:
-                    from transformers import BitsAndBytesConfig
-                    model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                        load_in_4bit=True,
-                        bnb_4bit_compute_dtype=torch.float16,
-                        bnb_4bit_use_double_quant=True,
-                        bnb_4bit_quant_type="nf4",
-                    )
-                    model_kwargs.pop(self._dtype_kwarg_name(), None)
-                    print("               Quantization: 4-bit NormalFloat (NF4) enabled for 32GB budget.")
-                except ImportError:
-                    print("               WARNING: bitsandbytes not installed; falling back to 16-bit.")
+        use_4bit, quant_error = self._resolve_quantization(torch, has_accelerate)
+        if use_4bit:
+            from transformers import BitsAndBytesConfig
+
+            compute_dtype = torch.float16 if cuda else torch.float32
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+            )
+            # With a quantization_config, Transformers derives the dtype itself and
+            # rejects/ignores an explicit dtype for the loaded weights.
+            model_kwargs.pop(self._dtype_kwarg_name(), None)
+            self.weight_precision = "nf4-4bit"
+            print("               Quantization: 4-bit NormalFloat (NF4), double quant, "
+                  f"compute dtype {'fp16' if cuda else 'fp32'}.")
+        else:
+            self.weight_precision = "fp16" if cuda else "fp32"
+            if quant_error:
+                self.weight_precision += " (4-bit requested but unavailable)"
 
         if self.spec.is_lora:
             if not self.spec.base_model:
                 raise ValueError(f"LoRA adapter '{self.spec.id}' requires an explicit base_model.")
+            # PEFT probes optional acceleration backends (torchao/aqlm/eetq) while
+            # building the LoRA model and *raises* when an installed one is too old -
+            # e.g. a Kaggle image shipping torchao 0.10.0 against a PEFT that needs
+            # >= 0.16.0. We never request those backends, so an unusable one should
+            # count as unavailable rather than abort the adapter load.
+            neutralised = neutralise_incompatible_peft_probes()
+            self.peft_neutralised = neutralised
+            if neutralised:
+                print("               [compat] ignoring unusable PEFT optional backend "
+                      f"probe(s): {', '.join(neutralised)}")
+            try:
+                from peft import PeftModel
+            except ImportError as exc:
+                raise RuntimeError(
+                    f"LoRA adapter '{self.spec.id}' needs the 'peft' package: {exc}. "
+                    "Install it with `pip install peft` (the Kaggle bootstrap does this)."
+                ) from exc
+
             print(f"               Step 1/2: Loading base model weights: {self.spec.base_model}")
             base = self._from_pretrained(AutoModelForCausalLM, self.spec.base_model, model_kwargs)
             print(f"               Step 2/2: Attaching LoRA adapter: {self.spec.id}")
-            from peft import PeftModel
             self.model = PeftModel.from_pretrained(base, self.spec.id)
+            print(f"               Adapter attached on a {self.weight_precision} base.")
         else:
             print(f"               Loading full merged weights from: {self.spec.id}")
             self.model = self._from_pretrained(AutoModelForCausalLM, self.spec.id, model_kwargs)
 
-        if not has_accelerate:
+        if not has_accelerate and not use_4bit:
             # device_map did not place the weights for us - do it explicitly.
-            target = "cuda" if torch.cuda.is_available() else "cpu"
+            target = "cuda" if cuda else "cpu"
             try:
                 self.model.to(target)
             except Exception as exc:  # noqa: BLE001
                 print(f"               WARNING: could not move the model to {target}: {exc}")
 
         self.model.eval()
-        print("               Model successfully resident in GPU memory.")
+        print(f"               Model successfully resident ({self.weight_precision}).")
         print_vram_status(f"Post-Load State: '{self.spec.short_name}' Resident")
 
     @staticmethod
@@ -571,6 +825,8 @@ def run_benchmark(
     seed: Optional[int] = None,
     resume: bool = True,
     reference_dir: Optional[Path] = None,
+    strict_quantization: bool = True,
+    session_hours: Optional[float] = 12.0,
 ) -> Dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -597,6 +853,7 @@ def run_benchmark(
     checkpoint_path = output_dir / "checkpoint_records.jsonl"
     records: List[Dict[str, Any]] = []
     done_keys: set = set()
+    ignored_trials = 0
     if resume and checkpoint_path.exists():
         for line_no, line in enumerate(checkpoint_path.read_text(encoding="utf-8").splitlines(), 1):
             line = line.strip()
@@ -607,6 +864,18 @@ def run_benchmark(
             except json.JSONDecodeError:
                 print(f"[resume] ignoring malformed checkpoint line {line_no}")
                 continue
+            # The current run's trial budget defines the experiment: when a previous
+            # invocation ran more trials (e.g. --trials 3) and this one asks for fewer
+            # (--trials 1), drop the surplus so every model/task contributes the same
+            # number of samples. The records stay on disk and are reused by a later
+            # wider run.
+            try:
+                rec_trial = int(rec.get("trial", 1))
+            except (TypeError, ValueError):
+                rec_trial = 1
+            if rec_trial > trials:
+                ignored_trials += 1
+                continue
             # Normalise older/partial records onto the canonical key set. Records
             # from *other* models are kept too, so running a large benchmark in
             # several family-by-family invocations still yields one complete table.
@@ -614,6 +883,9 @@ def run_benchmark(
             done_keys.add(record_key(records[-1]))
         if records:
             print(f"[resume] Recovered {len(records)} completed evaluation(s) from {checkpoint_path.name}\n")
+        if ignored_trials:
+            print(f"[resume] Ignored {ignored_trials} record(s) with trial > {trials} "
+                  f"(this run uses {trials} trial(s) per task; they stay cached on disk).")
 
     checkpoint_fh = open(checkpoint_path, "a", encoding="utf-8")
 
@@ -630,6 +902,9 @@ def run_benchmark(
     model_statuses: Dict[str, Dict[str, Any]] = {}
     completed_count = 0
     skipped_count = 0
+    gen_times: List[float] = []
+    planned_evaluations = len(models) * len(problems) * trials
+    eta_warned = False
 
     try:
         for model_spec in models:
@@ -644,7 +919,14 @@ def run_benchmark(
             ]
             if not pending:
                 print("  [resume] all trials for this model already completed - skipping load.")
-                model_statuses[model_spec.short_name] = {"status": "already_complete", "records": 0}
+                recovered = {r.get("weight_precision") for r in records
+                             if r.get("short_name") == model_spec.short_name}
+                recovered.discard(None)
+                model_statuses[model_spec.short_name] = {
+                    "status": "already_complete",
+                    "records": 0,
+                    "weight_precision": ", ".join(sorted(recovered)) if recovered else None,
+                }
                 continue
             skipped_count += len(problems) * trials - len(pending)
 
@@ -653,7 +935,11 @@ def run_benchmark(
                 engine = SyntheticDryRunEngine(model_spec)
             else:
                 try:
-                    engine = KaggleInferenceEngine(model_spec, load_in_4bit=load_in_4bit)
+                    engine = KaggleInferenceEngine(
+                        model_spec,
+                        load_in_4bit=load_in_4bit,
+                        strict_quantization=strict_quantization,
+                    )
                 except Exception as e:
                     print(f"[FATAL] Failed to load model '{model_spec.id}': {type(e).__name__}: {e}")
                     print("[FATAL] Full traceback:")
@@ -666,6 +952,10 @@ def run_benchmark(
                     }
                     continue
 
+            model_precision = getattr(engine, "weight_precision", None) or (
+                "synthetic (no weights loaded)" if dry_run else None)
+            if model_precision:
+                print(f"  [precision] {model_spec.short_name}: {model_precision}")
             model_records_start = len(records)
             try:
                 for prob in problems:
@@ -694,12 +984,15 @@ def run_benchmark(
                             )
                             gen_time = round(time.time() - t0, 2)
                             code = extract_python_code(raw_out)
+                            if gen_time > 0:
+                                gen_times.append(gen_time)
                         except Exception as e:
                             print(f"     [Trial {t}] Generation exception: {type(e).__name__}: {e}")
                             _persist(new_record(
                                 model_spec, pid, t, domain, strategy,
                                 error_type="GenerationError",
                                 error_message=f"{type(e).__name__}: {e}"[:200],
+                                weight_precision=model_precision,
                             ))
                             continue
 
@@ -744,20 +1037,19 @@ def run_benchmark(
                         # used to be iterated key-by-key and always scored 0.0. The
                         # pilot dataset ships no ground-truth equations, so MAS reports
                         # mathematical annotation density (see the metric docstring).
+                        # Default is None (not measured), never a fabricated constant.
                         ground_truth = prob.get("ground_truth_equations") or prob.get("equations") or []
                         mas_res = safe_metric("mathematical_fidelity", compute_mathematical_fidelity,
                                               code, ground_truth, default={}) or {}
-                        mas_val = mas_res.get("mas_score",
-                                              mas_res.get("mathematical_fidelity",
-                                                          mas_res.get("mas", 0.0)))
+                        mas_val = metric_value(mas_res, "mathematical_fidelity", None)
 
                         # Metric 6: Code Maintainability Index (CMI)
                         cmi_res = safe_metric("code_quality", compute_code_quality, code, default={}) or {}
-                        cmi_val = cmi_res.get("code_maintainability_index", cmi_res.get("cmi", 70.0))
+                        cmi_val = metric_value(cmi_res, "code_quality", None)
 
                         # Metric 7: Constraint Adherence Rate (CAR)
                         car_res = safe_metric("constraint_adherence", compute_constraint_adherence, code, prob, default={}) or {}
-                        car_val = car_res.get("constraint_adherence_rate", car_res.get("car", 0.8))
+                        car_val = metric_value(car_res, "constraint_adherence", None)
 
                         # Metric 8: Visual similarity vs. the 3Blue1Brown reference clip
                         # (DINOv2 + DTW) and SSIM-based temporal similarity. Requires a
@@ -783,10 +1075,10 @@ def run_benchmark(
                             reason = "render skipped/disabled" if not video_path else f"no reference clip at {ref_video}"
                             print(f"       [metric notice] visual metrics unavailable ({reason})")
 
-                        exec_val = exec_res.get("executability", 0)
-                        vcer_val = vc_res.get("vcer", vc_res.get("version_conflict_rate", 0.0))
-                        align_val = align_res.get("alignment_score", 0.0)
-                        cov_val = cov_res.get("coverage_score", 0.0)
+                        exec_val = metric_value(exec_res, "executability", 0)
+                        vcer_val = metric_value(vc_res, "version_conflicts", 0.0)
+                        align_val = metric_value(align_res, "alignment", 0.0)
+                        cov_val = metric_value(cov_res, "coverage", 0.0)
 
                         err_type = exec_res.get("error_type")
                         err_msg = exec_res.get("error_message")
@@ -797,10 +1089,15 @@ def run_benchmark(
                             except (TypeError, ValueError):
                                 return None
 
+                        def _score(value: Any, digits: int = 3) -> str:
+                            """None-safe metric formatting: 'not measured' prints as n/a."""
+                            number = _num(value, digits)
+                            return "n/a" if number is None else f"{number:.{digits}f}"
+
                         print(
-                            f"     [Trial {t}] Exec: {exec_val} | VCER: {float(vcer_val) * 100:.1f}% | "
-                            f"MAS: {float(mas_val):.3f} | CMI: {float(cmi_val):.1f} | CAR: {float(car_val):.2f} | "
-                            f"Align: {float(align_val):.3f} | Cov: {float(cov_val):.3f} ({gen_time}s)"
+                            f"     [Trial {t}] Exec: {exec_val} | VCER: {_score(float(vcer_val) * 100, 1)}% | "
+                            f"MAS: {_score(mas_val)} | CMI: {_score(cmi_val, 1)} | CAR: {_score(car_val, 2)} | "
+                            f"Align: {_score(align_val)} | Cov: {_score(cov_val)} ({gen_time}s)"
                         )
 
                         _persist(new_record(
@@ -821,6 +1118,7 @@ def run_benchmark(
                             render_duration_s=_num(exec_res.get("render_duration_s"), 2) or 0.0,
                             code_len_lines=len(code.splitlines()),
                             code_path=str(code_file.relative_to(ROOT_DIR)),
+                            weight_precision=model_precision,
                         ))
             except KeyboardInterrupt:
                 raise
@@ -838,7 +1136,28 @@ def run_benchmark(
             model_statuses[model_spec.short_name] = {
                 "status": "ok",
                 "records": len(records) - model_records_start,
+                "weight_precision": model_precision,
+                "peft_neutralised_probes": getattr(engine, "peft_neutralised", None) or None,
             }
+
+            # ── Runtime projection ─────────────────────────────────────────
+            # Generation dominates wall-clock (a 4-bit 8B model on a T4 can take
+            # ~9 min per Manim script), so surface a running estimate before the
+            # session is killed mid-run.
+            remaining = max(0, planned_evaluations - len(records))
+            if gen_times and remaining:
+                mean_gen = sum(gen_times) / len(gen_times)
+                eta_hours = mean_gen * remaining / 3600.0
+                print(f"\n  [eta] mean generation {mean_gen:.0f}s over {len(gen_times)} sample(s); "
+                      f"{remaining} evaluation(s) left -> ~{eta_hours:.1f} h of generation "
+                      f"(+ up to {timeout}s render each)")
+                if session_hours and eta_hours > session_hours and not eta_warned:
+                    eta_warned = True
+                    print(f"  [eta] WARNING: projected generation time exceeds the "
+                          f"{session_hours:.0f} h session budget. Options: fewer "
+                          f"--trials, fewer --problems, lower --max-new-tokens, or "
+                          f"--skip-render. Progress is checkpointed, so re-running "
+                          f"resumes where this leaves off.")
     finally:
         checkpoint_fh.close()
 
@@ -868,6 +1187,11 @@ def run_benchmark(
             "model_statuses": model_statuses,
             "completed_evaluations": completed_count,
             "skipped_evaluations": skipped_count,
+            "weight_precision": _summarise_precision(model_statuses),
+            "weight_precision_by_model": {
+                name: status.get("weight_precision")
+                for name, status in model_statuses.items() if status.get("weight_precision")
+            },
         },
     )
 
@@ -934,9 +1258,15 @@ def main():
     parser.add_argument("--trials", type=int, default=1, help="Trials per problem")
     parser.add_argument("--strategy", type=str, default="zero_shot", choices=["zero_shot", "version_aware", "cot"])
     parser.add_argument("--load-in-4bit", action="store_true", help="Enable 4-bit NormalFloat quantization (recommended for 31B models)")
+    parser.add_argument("--precision", choices=["auto", "fp16", "4bit"], default=None,
+                        help="Weight precision: 4bit (NF4), fp16, or auto (catalog default)")
+    parser.add_argument("--allow-quant-fallback", action="store_true",
+                        help="If 4-bit is requested but unavailable, continue in FP16 instead of failing")
     parser.add_argument("--skip-render", action="store_true", help="Skip Manim CE rendering (static AST + conflict checks only)")
     parser.add_argument("--compute-visual-sim", action="store_true", help="Compute DINOv2 + DTW similarity with reference videos")
     parser.add_argument("--timeout", type=int, default=45, help="Render timeout in seconds")
+    parser.add_argument("--session-hours", type=float, default=12.0,
+                        help="Warn when the projected generation time exceeds this budget (0 disables)")
     parser.add_argument("--max-new-tokens", type=int, default=4096, help="Maximum tokens generated per trial")
     parser.add_argument("--seed", type=int, default=None, help="Torch RNG seed for reproducible sampling")
     parser.add_argument("--no-resume", action="store_true", help="Ignore the checkpoint file and start from scratch")
@@ -945,6 +1275,12 @@ def main():
     parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help="Output directory")
 
     args = parser.parse_args()
+
+    # --precision normalises the older --load-in-4bit switch
+    if args.precision == "4bit":
+        args.load_in_4bit = True
+    elif args.precision == "fp16":
+        args.load_in_4bit = False
 
     if args.list_models:
         all_specs = catalog.list()
@@ -1013,6 +1349,8 @@ def main():
         seed=args.seed,
         resume=not args.no_resume,
         reference_dir=Path(args.reference_dir) if args.reference_dir else None,
+        strict_quantization=not args.allow_quant_fallback,
+        session_hours=args.session_hours,
     )
 
 

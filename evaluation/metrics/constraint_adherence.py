@@ -213,9 +213,16 @@ def compute_constraint_adherence(
     Returns:
         See module docstring for full schema.
     """
-    # Extract constraints from problem spec
+    # Extract constraints from problem spec.
+    #
+    # Schema note: the ManiBench pilot dataset has no `constraints` key - its visual
+    # directives live in `coverage_requirements` (list of strings). Reading only
+    # `constraints` made every problem look unconstrained, so the metric returned
+    # None and callers substituted a constant score.
     constraints: list[str] = []
-    raw_constraints = problem.get("constraints", [])
+    raw_constraints = problem.get("constraints")
+    if not raw_constraints:
+        raw_constraints = problem.get("coverage_requirements") or []
     if isinstance(raw_constraints, list):
         for c in raw_constraints:
             if isinstance(c, str):
@@ -242,6 +249,8 @@ def compute_constraint_adherence(
         problem.get("prompt")
         or problem.get("task")
         or problem.get("description")
+        or problem.get("brief_description")
+        or problem.get("full_prompt")
         or problem.get("title", "")
     )
 

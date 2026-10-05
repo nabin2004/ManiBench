@@ -35,6 +35,7 @@ from scripts.publication_figures import (
     _sorted_models,
     model_colors,
     per_problem_values,
+    precision_label,
 )
 
 
@@ -327,6 +328,7 @@ def build_markdown_report(
     lines.append(f"**Models:** {len(models)}  ")
     lines.append(f"**Render validation:** "
                  f"{'disabled (static analysis only)' if meta.get('skip_render') else 'enabled (headless Manim CE)'}  ")
+    lines.append(f"**Weight precision:** {precision_label(meta.get('weight_precision'))}  ")
     lines.append(f"**Hardware:** {meta.get('hardware_text', 'see run_manifest.json')}  ")
     lines.append(f"**Generated:** {meta.get('generated_at', '')}")
     lines.append("")
@@ -372,7 +374,7 @@ def build_markdown_report(
             pass_text,
             f"{_fmt(s.get('vcer_pct'))}%",
             _fmt(s.get("mas_mean"), 3),
-            _fmt(s.get("cmi_mean"), 1),
+            _fmt(s.get("cmi_mean"), 3),
             _fmt(s.get("car_mean"), 3),
             _fmt(s.get("alignment_mean"), 3),
             _fmt(s.get("coverage_mean"), 3),
@@ -512,6 +514,11 @@ def build_markdown_report(
                  "saturating at three) rather than symbolic equivalence to a reference formula.")
     lines.append("- **Decoding.** Temperature 0 with a single trial per task is deterministic "
                  "but not a sample of the model's output distribution.")
+    lines.append(f"- **Weight precision.** All variants were loaded at "
+                 f"**{precision_label(meta.get('weight_precision'))}**. A precision mismatch "
+                 f"between variants (for example a quantized adapter against FP16 merged weights) "
+                 f"would confound the SFT/GRPO attribution, so the loader refuses to fall back "
+                 f"silently; per-model values are recorded in `run_manifest.json`.")
     lines.append("")
 
     # ── Reproducibility ────────────────────────────────────────────────────

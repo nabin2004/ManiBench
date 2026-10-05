@@ -126,8 +126,8 @@ class PaperFormatter:
                 "coverage_std": round(cov_std, 4),
                 "mas_mean": round(mas_mean, 4) if mas_mean is not None else None,
                 "mas_std": round(mas_std, 4) if mas_std is not None else None,
-                "cmi_mean": round(cmi_mean, 2) if cmi_mean is not None else None,
-                "cmi_std": round(cmi_std, 2) if cmi_std is not None else None,
+                "cmi_mean": round(cmi_mean, 3) if cmi_mean is not None else None,
+                "cmi_std": round(cmi_std, 3) if cmi_std is not None else None,
                 "car_mean": round(car_mean, 4) if car_mean is not None else None,
                 "car_std": round(car_std, 4) if car_std is not None else None,
                 "temporal_sim_mean": round(temp_mean, 4) if temp_mean is not None else None,
@@ -287,7 +287,7 @@ class PaperFormatter:
                 if has_mas:
                     row_parts.append(fmt(s["mas_mean"], top_mas, precision=3) if s.get("mas_mean") is not None else "--")
                 if has_cmi:
-                    row_parts.append(fmt(s["cmi_mean"], top_cmi, precision=1) if s.get("cmi_mean") is not None else "--")
+                    row_parts.append(fmt(s["cmi_mean"], top_cmi, precision=3) if s.get("cmi_mean") is not None else "--")
                 if has_car:
                     row_parts.append(fmt(s["car_mean"], top_car, precision=3) if s.get("car_mean") is not None else "--")
                 row_parts.extend([align_str, cov_str])
@@ -510,6 +510,7 @@ class PaperFormatter:
             f"- **Timestamp:** {meta.get('timestamp', 'N/A')}",
             f"- **Total Model Evaluations:** {len(self.model_summaries)}",
             f"- **Trials per Problem:** {meta.get('trials', 1)}",
+            f"- **Weight Precision:** {meta.get('weight_precision', 'not recorded')}",
             f"- **Deterministic Rendering:** {meta.get('skip_render', False) and 'disabled (static analysis)' or 'enabled (Manim CE render)'}",
             "",
             "## Primary Benchmark Results",

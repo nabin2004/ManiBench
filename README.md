@@ -245,14 +245,68 @@ backbone** and emits a camera-ready package:
 | GRPO (`r=16` LoRA adapter) | [`nabin2004/qwen-Manimator-1-grpo`](https://huggingface.co/nabin2004/qwen-Manimator-1-grpo) | lora |
 
 ```bash
-make trio TRIALS=3                                  # full run + bundle
-python scripts/run_model_trio.py --trials 3         # same, explicit
+make trio                                           # 1 trial/task + full bundle (default)
+python scripts/run_model_trio.py                    # same, explicit
 python scripts/run_model_trio.py --dry-run --skip-render   # offline pipeline check
+python scripts/run_model_trio.py --trials 3         # 3 trials (see runtime note)
+python scripts/run_model_trio.py --precision 4bit   # NF4 weights (VRAM-constrained hosts)
+python scripts/run_model_trio.py --only grpo        # just one variant (reuses the rest)
 python scripts/run_model_trio.py --from-json results/trio_publication/benchmark_run_*.json
 ```
 
+**Runtime.** Generation dominates: a 4-bit 8B model on a T4 takes roughly **8–9 minutes
+per Manim script** at `--max-new-tokens 4096`, so one trial over 3 models × 12 tasks is
+≈5 h and three trials ≈15 h — beyond a 12 h Kaggle session. **`--trials 1` is therefore the
+default**; raise it only if you can spread the run across sessions (progress is
+checkpointed, so re-running the same command resumes). The runner prints a running ETA
+after each model and warns when the projection exceeds `--session-hours` (default 12).
+Main levers, in order of impact: `--trials`, `--problems`, `--max-new-tokens`,
+`--skip-render`.
+
+**Changing the trial count later.** The checkpoint is filtered to the current trial
+budget, so re-running with `--trials 1` after starting with `--trials 3` yields a
+consistent one-trial table — surplus trials are reported as ignored and stay cached for a
+later wider run, so completed work is never thrown away (`--fresh` still forces a clean
+slate).
+
+**Weight precision.** By default the trio loads **all three variants unquantized in FP16**
+(`--precision fp16`) — the fastest honest configuration on a T4, and uniform across
+variants, because comparing a quantized adapter against FP16 merged weights would
+confound the SFT/GRPO attribution with a precision difference.
+
+Opt into NF4 with `--precision 4bit` (roughly a third of the VRAM, slower per token on
+Turing). In that mode the runner installs `accelerate` + `bitsandbytes` if missing,
+checks CUDA/`accelerate`/`bitsandbytes` **before** loading any weights, and aborts with
+actionable guidance rather than silently running FP16 (`--allow-quant-fallback` relaxes
+that). `--precision auto` lets the catalogue decide (4-bit only for the 31B entries).
+
+Whatever is used is recorded as provenance: `weight_precision` on every trial row,
+`weight_precision_by_model` in the manifest, and a "Weight precision" line in `REPORT.md`
+and the leaderboard.
+
 `--from-json` rebuilds every figure and the report from a finished run **without a
 GPU** — useful when iterating on the write-up.
+
+**One variant only (`--only`).** Restrict a run to selected variants — the practical way to
+recover when one model failed after the others finished. It accepts a short name, a repo id,
+or a unique substring, and it combines with the checkpoint, so the other variants' completed
+results are still loaded and the rebuilt tables/report cover all three; only the missing
+evaluations are generated:
+
+```bash
+python scripts/run_model_trio.py --only qwen-Manimator-1-grpo
+python scripts/run_model_trio.py --only grpo --trials 1
+```
+
+**Adapter failures fail fast.** PEFT probes optional acceleration backends
+(torchao / aqlm / eetq) while attaching a LoRA adapter and *raises* if an installed one is
+too old — e.g. a Kaggle image shipping `torchao 0.10.0` against a PEFT needing `>= 0.16.0`,
+which kills the adapter load with `ImportError: Found an incompatible version of torchao`.
+ManiBench never uses those backends, so an unusable probe now counts as unavailable
+(`[compat] ignoring unusable PEFT optional backend probe(s): ...`, recorded under
+`peft_neutralised_probes` in the manifest). PEFT itself is installed by the runner when a
+LoRA variant is selected, and the whole adapter path is validated **before** any weights
+download — so a broken adapter environment fails in seconds rather than hours.
 
 Publication artifacts written to `results/trio_publication/`:
 

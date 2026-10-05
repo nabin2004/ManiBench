@@ -93,10 +93,28 @@ METRIC_SPECS: List[Tuple[str, str, bool, float, str]] = [
     ("car_mean", "Constraint adherence", True, 1.0, ""),
     ("alignment_mean", "Visual alignment", True, 1.0, ""),
     ("coverage_mean", "Pedagogical coverage", True, 1.0, ""),
-    ("cmi_mean", "Maintainability index", True, 100.0, ""),
+    # code_quality.cmi_score is normalised to [0, 1] (radon MI 0-100 / 100)
+    ("cmi_mean", "Maintainability index", True, 1.0, ""),
 ]
 
 RADAR_METRICS = METRIC_SPECS
+
+
+def precision_label(weight_precision: Optional[str]) -> str:
+    """
+    Compact weight-precision label for figures/reports.
+
+    "nf4-4bit (all models)" -> "4-bit NF4 (all models)". Falls back to a neutral
+    label when the metadata does not record a precision.
+    """
+    if not weight_precision:
+        return "FP16"
+    text = str(weight_precision)
+    if text.startswith("nf4-4bit"):
+        return "4-bit NF4" + text[len("nf4-4bit"):]
+    if text.startswith("synthetic"):
+        return "no weights (synthetic)"
+    return text
 
 
 def _short(name: str) -> str:
@@ -255,6 +273,7 @@ def fig01_methodology(
     trials: int = 1,
     strategy: str = "zero_shot",
     benchmark: str = "ManiBench",
+    quant_label: str = "FP16",
 ) -> List[Path]:
     """Schematic of the evaluation pipeline: datasets -> models -> metrics -> paper."""
     fig, ax = plt.subplots(figsize=(13.6, 5.4))
@@ -293,7 +312,10 @@ def fig01_methodology(
     C5, W5 = 0.855, 0.140     # analysis / artifacts
 
     # ── Column 1: benchmark ───────────────────────────────────────────────
-    box(C1, 0.30, W1, 0.40, f"{benchmark} pilot suite",
+    # Keep the box title short enough for the column width: drop a trailing
+    # parenthetical (e.g. "ManiBench (pilot v1.0)" -> "ManiBench").
+    bench_title = re.sub(r"\s*\(.*?\)\s*", " ", str(benchmark)).strip()[:18] or "ManiBench"
+    box(C1, 0.30, W1, 0.40, f"{bench_title} pilot suite",
         f"{n_problems} Manim tasks\nphysics - calculus\nlinear algebra - ML\n"
         f"probability - geometry\n\n{trials} trial(s) per task\nprompt: {strategy}",
         face="#F2F6FB", edge="#4C72B0")
@@ -316,7 +338,7 @@ def fig01_methodology(
 
     # ── Column 3: generation ──────────────────────────────────────────────
     box(C3, 0.325, W3, 0.35, "Generation",
-        "chat template\ntemperature 0\nstreaming decode\nFP16 sharded\nover 2x T4",
+        f"chat template\ntemperature 0\nstreaming decode\n{quant_label}\nsharded over 2x T4",
         face="#FFF8F0", edge="#DD8452")
     column_header(C3 + W3 / 2, "Inference")
     for centre in model_centres:
@@ -835,7 +857,8 @@ def build_all(
             n_problems=int(meta.get("n_problems", 12) or 12),
             trials=int(meta.get("trials", 1) or 1),
             strategy=str(meta.get("strategy", "zero_shot")),
-            benchmark=str(meta.get("benchmark", "ManiBench")))
+            benchmark=str(meta.get("benchmark", "ManiBench")),
+            quant_label=precision_label(meta.get("weight_precision")))
     if summaries:
         attempt("fig02 leaderboard", fig02_leaderboard, summaries, figures_dir)
         attempt("fig03 metric radar", fig03_radar, summaries, figures_dir)

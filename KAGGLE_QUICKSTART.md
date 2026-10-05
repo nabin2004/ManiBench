@@ -109,8 +109,29 @@ failure taxonomy, significance forest plot, metric correlations, a narrative
 reuses the same engine, checkpointing and metrics):
 
 ```bash
-!python scripts/run_model_trio.py --trials 3
+!python scripts/run_model_trio.py                  # 1 trial per task (recommended)
+!python scripts/run_model_trio.py --trials 3       # only if you can spread over sessions
+!python scripts/run_model_trio.py --only grpo      # re-run one variant, keep the others
 ```
+
+> **Recovering from a failed variant.** If one model fails after the others have finished,
+> don't start over: `--only <name>` (short name, repo id, or unique substring) re-runs just
+> that variant while the checkpoint supplies the other two, so the tables and report stay
+> complete. LoRA adapter environments are validated *before* any weights download, so a
+> stale `torchao`/PEFT combination now fails in seconds instead of hours into the run.
+
+> **Budget.** At ~8–9 minutes per generation (4-bit 8B on a T4, 4096 max new tokens), one
+> trial over 3 models × 12 tasks is ≈5 h; three trials is ≈15 h and will not fit a 12 h
+> Kaggle session. The runner prints an ETA after each model and warns when it exceeds
+> `--session-hours` (default 12). Progress is checkpointed — just re-run to resume — and if
+> you started with `--trials 3` and switch to `--trials 1`, the checkpoint is filtered to
+> one trial per task rather than forcing a restart.
+
+The trio loads **all three variants unquantized in FP16** by default (uniform precision, so
+the SFT/GRPO comparison is not confounded). Use `--precision 4bit` on a VRAM-constrained
+host: that mode installs `accelerate` + `bitsandbytes` if needed and verifies GPU support
+*before* downloading any weights, stopping with instructions rather than silently
+downgrading if NF4 cannot be honoured.
 
 It writes `results/trio_publication/` with 9 figures (PDF + 300-DPI PNG), LaTeX
 tables, CSVs, `REPORT.md`, `latex_includes.tex`, `ARTIFACTS.md`, a `run_manifest.json`
